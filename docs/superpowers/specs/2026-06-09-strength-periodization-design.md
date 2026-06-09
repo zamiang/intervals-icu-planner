@@ -6,34 +6,38 @@
 ## Problem
 
 The planner pushes a single static `weight_training` block on every weight day,
-regardless of where the athlete is in their season. Strength needs change as an
-A race approaches: build max strength early, shift to maintenance mid-season,
-then taper to stay fresh. Today there is no concept of training phase.
+regardless of where the athlete is in their season. The evidence
+(`cycling-training-report.md` §2) prescribes a **12–14 week heavy strength block
+at 2×/week**, then **tapering frequency (not abandoning it)** as event-specific
+volume rises near the A race. Today there is no concept of training phase, so the
+plan cannot run that block-then-taper structure automatically.
 
 ## Goal
 
-Vary **both** the strength session count and the routine content pushed to
-Intervals.icu based on **weeks remaining until the A race**, derived from the
-`RACE_A` event already on the Intervals.icu calendar.
+Vary the strength session **count** and **routine** pushed to Intervals.icu based
+on **weeks remaining until the A race**, derived from the `RACE_A` event already
+on the Intervals.icu calendar (Escape New York, 2026-09-26).
 
-Non-goals: changing cycling prescription logic, periodizing low-cadence work,
-or any UI. The existing TSB/fatigue and ramp-guard logic stays authoritative and
-layers on top of phase selection.
+Non-goals: changing cycling prescription logic, periodizing the sweet-spot
+session, or any UI. The existing TSB/fatigue, ramp-guard, and 80/20 load-target
+logic (added in #14) stays authoritative and layers on top of phase selection.
 
 ## Phase Model
 
-Phase is a pure function of weeks-to-race. Boundaries are configurable.
+Two phases, derived from the evidence: keep the heavy block running the full
+~12–14 weeks, then taper *frequency* (2×→1×→0) in the final weeks. There is
+deliberately **no mid-block "maintenance" routine** — the report says keep it
+heavy throughout; acute fatigue is already handled by the TSB/ramp-guard logic.
 
-Boundaries are half-open so each week-count maps to exactly one phase
-(`base_weeks = 12`, `taper_weeks = 4`, `taper_zero_weeks = 1`):
+Phase is a pure function of weeks-to-race. Boundaries are half-open so each
+week-count maps to exactly one phase (`taper_weeks = 4`, `taper_zero_weeks = 1`):
 
-| Phase  | Weeks to race (wtr)        | Sessions/wk         | Routine            |
-| ------ | -------------------------- | ------------------- | ------------------ |
-| `base` | `wtr ≥ 12`                 | `weight_sessions`   | max-strength       |
-| `build`| `4 ≤ wtr < 12`             | `weight_sessions`   | maintenance        |
-| `race` | `1 ≤ wtr < 4`              | `weight_sessions_taper` (1) | taper      |
-| `race` (final) | `wtr < 1`          | 0                   | — (none)           |
-| none   | no race found              | `weight_sessions`   | max-strength (default) |
+| Phase   | Weeks to race (wtr) | Sessions/wk                 | Routine                       |
+| ------- | ------------------- | --------------------------- | ----------------------------- |
+| `block` | `wtr ≥ 4`           | `weight_sessions` (2)       | `weight_training` (heavy)     |
+| `taper` | `1 ≤ wtr < 4`       | `weight_sessions_taper` (1) | `weight_training_taper`       |
+| `taper` (final) | `wtr < 1`   | 0                           | — (none)                      |
+| none    | no race found       | `weight_sessions` (2)       | `weight_training` (default)   |
 
 When no `RACE_A` event exists and no `race_date` fallback is configured, the
 planner behaves exactly as it does today (default routine + `weight_sessions`).
@@ -47,83 +51,110 @@ happen in the CLI/push layer, which already talks to Intervals.icu.
 ### Data flow
 
 ```
-CLI (cli.ts / push-week.ts)
-  ├─ getEvents(window covering today..race)         [existing IntervalsClient]
-  ├─ find RACE_A event → race date
-  │     └─ fallback: config.periodization.race_date
-  ├─ compute weeksToRace = ceil((raceDate - startDate) / 7)   [undefined if none]
+CLI (cli.ts)
+  ├─ getEvents(today, raceHorizon)   ← NOTE: separate wide-window fetch.
+  │     The existing getEvents(today, endStr) covers only the 7-day plan window
+  │     and will NOT see a race 15 weeks out. Fetch a wide window (e.g. +52 wks)
+  │     to locate the RACE_A event.
+  ├─ resolveRaceDate(events, config) → earliest future RACE_A date, else
+  │     config.periodization.race_date, else undefined
+  ├─ weeksToRace = raceDate ? ceil((raceDate - today) / 7 days) : undefined
   └─ schedule({ ...input, weeksToRace })
-        └─ classifyPhase(weeksToRace, config) → phase
-              ├─ pick routine def  (base|build|race → which WorkoutDefinition)
-              └─ pick session count (min(phaseTarget, fatigueTarget))
+        └─ classifyPhase(weeksToRace, config) → "block" | "taper" | undefined
+              ├─ pick routine WorkoutDefinition (block→weight_training,
+              │     taper→weight_training_taper, undefined→weight_training)
+              └─ pick session count (see below)
 ```
 
 ### Components
 
 1. **`classifyPhase(weeksToRace, config): Phase | undefined`** — new pure
-   function in `scheduler.ts`. `Phase = "base" | "build" | "race"`. Returns
-   `undefined` when `weeksToRace` is undefined.
+   function in `scheduler.ts`. `Phase = "block" | "taper"`. Returns `undefined`
+   when `weeksToRace` is undefined. `taper` when `wtr < taper_weeks`; `block`
+   otherwise. (The 0-session final week is handled by the count rule, not a
+   separate phase.)
 
-2. **`resolveRaceDate(events, config): string | undefined`** — new helper
-   (CLI-side or `intervals.ts`). Returns the earliest future `RACE_A` event date,
-   else `config.periodization.race_date`, else undefined.
+2. **`phaseWeightSessions(phase, weeksToRace, config): number`** — new helper.
+   `block` → `weight_sessions`; `taper` with `wtr ≥ taper_zero_weeks` →
+   `weight_sessions_taper`; `taper` with `wtr < taper_zero_weeks` → 0; undefined
+   phase → `weight_sessions`.
 
-3. **`schedule()`** — gains `weeksToRace?: number` on `SchedulerInput`. Uses
-   `classifyPhase` to select the routine `WorkoutDefinition` and the phase
-   session-count target. Effective count = `min(phaseTarget, fatigueTarget)` so
-   fatigue can still reduce but never inflate volume. `race`-final (< taper_zero)
-   yields 0 sessions.
+3. **`resolveRaceDate(events, config): string | undefined`** — new helper
+   (CLI-side). Earliest future `RACE_A` event date, else
+   `config.periodization.race_date`, else undefined.
 
-4. **Config** — new optional fields (all defaulted for backward compat):
+4. **`schedule()`** — gains `weeksToRace?: number` on `SchedulerInput`.
+   - Replaces the current `weightSessionsTarget` derivation. New effective count
+     = `min(phaseCount, fatigueCount)` where `fatigueCount` is today's logic
+     (`very_fatigued ? weight_sessions_very_fatigued : weight_sessions`). So
+     fatigue can still cut volume but phase never inflates it past the fatigue
+     cap, and taper/race-week reductions still apply.
+   - Selects the routine `WorkoutDefinition` by phase and uses its `name` /
+     `description` when placing the `weights` PlannedWorkout (Phase 3 loop).
+
+5. **`attachLoadTargets()` fix** — currently hardcodes
+   `config.weight_training.duration_minutes` for the weights duration. With a
+   taper routine of different duration this is wrong. Fix: carry the selected
+   routine's `duration_minutes` onto the `weights` PlannedWorkout at creation
+   time (set `durationMin` in the Phase 3 loop), and have `attachLoadTargets`
+   use the already-set `durationMin` for weights instead of re-reading config.
+
+6. **Config** — new optional fields (all defaulted for backward compat),
+   following the existing `validateWorkout` / defaults pattern in `config.ts`:
    ```yaml
-   weight_training:            # existing — serves as the `base` (max-strength) routine
-   weight_training_maintenance:  # optional; falls back to weight_training
-   weight_training_taper:        # optional; falls back to weight_training_maintenance, then weight_training
+   weight_training:          # existing — the heavy block routine (unchanged)
+   weight_training_taper:    # optional; falls back to weight_training
    periodization:
-     base_weeks: 12       # ≥ this many weeks → base
-     taper_weeks: 4       # < this many weeks → race/taper
-     taper_zero_weeks: 1  # < this many weeks → no strength
-     race_date: null      # optional ISO date fallback when no RACE_A on calendar
+     taper_weeks: 4          # < this many weeks to race → taper
+     taper_zero_weeks: 1     # < this many weeks → no strength
+     race_date: null         # optional ISO date fallback when no RACE_A on calendar
    scheduling:
      weight_sessions_taper: 1   # sessions/wk during taper
    ```
+   `Config` type gains optional `weight_training_taper?: WorkoutDefinition` and a
+   `periodization` block; `SchedulingConfig` gains `weight_sessions_taper`.
+   `loadConfig` validates `weight_training_taper` only if present (new optional
+   variant of `validateWorkout`).
 
 ## Routine Variants
 
-All three authored from the heavy block already in `config.yaml`:
+Two routines, both heavy (no light/maintenance variant):
 
-- **`weight_training` (max-strength / base):** the current heavy routine as-is.
-- **`weight_training_maintenance` (build):** same big compound lifts
-  (squat, deadlift, Bulgarian split squat) at heavy load but trimmed — drop the
-  upper-body accessory block to 1–2 movements and reduce core volume. Goal:
-  retain strength with less fatigue while bike load climbs.
-- **`weight_training_taper`:** only the two primary compound lifts (squat +
-  deadlift) at heavy load, low volume (2–3 sets), no accessories. Goal: retain
-  neuromuscular strength with minimal fatigue cost.
+- **`weight_training` (block):** the current heavy routine, unchanged — squat,
+  deadlift, Bulgarian split squat heavy, plus accessory/core. Runs the full block.
+- **`weight_training_taper`:** the two primary compound lifts (squat + deadlift)
+  at the same heavy load but reduced volume (2–3 sets, drop accessories). Goal:
+  retain neuromuscular strength with minimal fatigue cost in race-approach weeks.
+  Shorter `duration_minutes` than the block routine.
 
 ## Error Handling
 
 - No `RACE_A` and no `race_date` → `weeksToRace` undefined → default behavior.
 - Race date in the past → treated as no race (undefined phase).
 - Multiple `RACE_A` events → use the earliest future one.
-- Missing optional routine variant → fall back per the chain above.
+- Missing `weight_training_taper` → fall back to `weight_training`.
 
 ## Testing
 
-`test/scheduler.test.ts` (extend) and config tests:
+`test/scheduler.test.ts` and `test/config.test.ts` (extend):
 
-- `classifyPhase`: boundary cases at 12, 4, 1 weeks; undefined input.
-- Session-count selection: phase target vs fatigue target `min` interaction
-  (e.g. taper + fresh → 1; base + very_fatigued → 1).
-- `race`-final week → 0 weight sessions placed.
-- Routine selection picks the right `WorkoutDefinition` per phase, with fallback
-  when a variant is absent.
+- `classifyPhase`: boundaries at `taper_weeks` (4) and `taper_zero_weeks` (1),
+  and `undefined` input.
+- `phaseWeightSessions`: block→2, taper→1, final-week→0, undefined→2.
+- Effective-count `min(phase, fatigue)` interaction: taper + fresh → 1;
+  block + very_fatigued → `weight_sessions_very_fatigued`.
+- Final taper week → 0 `weights` entries placed.
+- Routine selection: `block` uses `weight_training`, `taper` uses
+  `weight_training_taper`, with fallback when the taper variant is absent.
+- `attachLoadTargets`: a placed taper-routine weights entry carries the taper
+  routine's `durationMin`, not the block routine's.
 - `resolveRaceDate`: RACE_A present, absent-with-config-fallback, past-date,
   multiple events.
-- Backward compat: no race info → identical plan to current behavior.
+- Backward compat: no race info → plan identical to current behavior.
 
 ## Out of Scope
 
-- Inferring phase from CTL trend (rejected: can't distinguish base from build).
-- Periodizing cycling or low-cadence prescriptions.
-- Auto-creating the RACE_A event (done manually / separately).
+- Inferring phase from CTL trend (rejected: can't distinguish phases reliably).
+- A mid-block "maintenance" routine (rejected: evidence says keep it heavy).
+- Periodizing cycling or sweet-spot prescriptions.
+- Auto-creating the RACE_A event (done manually / already on the calendar).
