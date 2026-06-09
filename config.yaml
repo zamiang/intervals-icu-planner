@@ -97,3 +97,16 @@ scheduling:
   # cycling-training-report.md). All non-quality days are now easy, never
   # "moderate" — moderate-everywhere riding is the grey-zone trap to avoid.
   hard_cycling_days: 1
+
+# Planned-load targets the planner attaches to each generated workout, so the
+# calendar shows TSS/duration/IF and Intervals.icu folds them into planned CTL.
+# TSS = (minutes / 60) * IF^2 * 100. The latest easy ride each week is promoted
+# to a single long endurance ride (long_minutes) — the century durability anchor.
+# Tune these to your FTP and the volume your week can absorb.
+load_targets:
+  easy_if: 0.62 # easy Zone 2 intensity factor (~160W at 260 FTP)
+  easy_minutes: 75 # standard easy ride duration → ~48 TSS
+  long_minutes: 180 # weekly long endurance ride → ~127 TSS (build this up over a block)
+  hard_if: 0.88 # hard interval ride IF → ~90 TSS at 75 min
+  hard_minutes: 75
+  sweet_spot_if: 0.88 # applied to the sweet_spot session (60 min) → ~77 TSS

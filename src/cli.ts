@@ -63,9 +63,21 @@ export function formatPlan(workouts: PlannedWorkout[]): string {
             ? "SS"
             : "CY";
     const zoneTag = w.targetZone ? ` (${zoneLabel(w.targetZone)})` : "";
-    return `${w.date} (${day})  [${icon}]  ${w.name}  — ${w.intensity}${zoneTag}`;
+    const loadTag =
+      typeof w.load === "number"
+        ? `  ·  ${w.load} TSS${w.durationMin ? ` / ${w.durationMin}min` : ""}`
+        : typeof w.durationMin === "number"
+          ? `  ·  ${w.durationMin}min`
+          : "";
+    return `${w.date} (${day})  [${icon}]  ${w.name}  — ${w.intensity}${zoneTag}${loadTag}`;
   });
   return lines.join("\n");
+}
+
+// Sum of planned TSS across a week's workouts — shown under the plan so the
+// weekly load budget is visible at a glance.
+export function weeklyPlannedTss(workouts: PlannedWorkout[]): number {
+  return workouts.reduce((sum, w) => sum + (w.load ?? 0), 0);
 }
 
 // Keyed by WorkoutType so adding a new variant is a compile error until the
@@ -78,7 +90,7 @@ const WORKOUT_TYPE_TO_EVENT_TYPE: Record<WorkoutType, string> = {
 };
 
 export function workoutToEvent(w: PlannedWorkout): IntervalsEvent {
-  return {
+  const event: IntervalsEvent = {
     // Intervals.icu's event API rejects a bare YYYY-MM-DD with a 422
     // ("could not be parsed at index 10") — it needs a time component.
     start_date_local: `${w.date}T00:00:00`,
@@ -87,6 +99,11 @@ export function workoutToEvent(w: PlannedWorkout): IntervalsEvent {
     type: WORKOUT_TYPE_TO_EVENT_TYPE[w.type],
     description: w.description,
   };
+  // Planned-load targets: shown on the calendar and folded into planned CTL/ATL.
+  if (typeof w.load === "number") event.icu_training_load = w.load;
+  if (typeof w.durationMin === "number") event.moving_time = Math.round(w.durationMin * 60);
+  if (typeof w.intensityFactor === "number") event.icu_intensity = w.intensityFactor;
+  return event;
 }
 
 async function runCheck(intervals: IntervalsClient, xert: XertClient): Promise<number> {
@@ -243,6 +260,7 @@ async function main() {
   }
   console.log();
   console.log(formatPlan(planned));
+  console.log(`\nWeekly planned load: ${weeklyPlannedTss(planned)} TSS`);
   console.log();
 
   if (dryRun) {

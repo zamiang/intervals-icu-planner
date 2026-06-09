@@ -28,6 +28,14 @@ const BASE_CONFIG: Config = {
     max_weekly_ramp_pct: 7,
     hard_cycling_days: 1,
   },
+  load_targets: {
+    easy_if: 0.62,
+    easy_minutes: 75,
+    long_minutes: 180,
+    hard_if: 0.88,
+    hard_minutes: 75,
+    sweet_spot_if: 0.88,
+  },
 };
 
 function makeInput(overrides: Partial<SchedulerInput> = {}): SchedulerInput {
@@ -517,5 +525,53 @@ describe("schedule", () => {
       expect(ride.description).toContain("SMART Workout 42");
       expect(ride.description).toContain("4x4min VO2max");
     }
+  });
+
+  describe("planned-load targets", () => {
+    it("attaches TSS, duration, and IF to every non-rest workout", () => {
+      const result = schedule(makeInput({ trainingLoad: { ctl: 50, atl: 40, tsb: 10 } }));
+      for (const w of result) {
+        if (w.type === "rest") continue;
+        expect(typeof w.durationMin).toBe("number");
+        if (w.type === "weights") {
+          // Weights carry duration only — no TSS/IF (matches Intervals.icu).
+          expect(w.load).toBeUndefined();
+          expect(w.intensityFactor).toBeUndefined();
+        } else {
+          expect(typeof w.load).toBe("number");
+          expect(typeof w.intensityFactor).toBe("number");
+        }
+      }
+    });
+
+    it("computes sweet-spot TSS from its duration and sweet_spot_if", () => {
+      const result = schedule(makeInput());
+      const ss = result.find((w) => w.type === "sweet_spot");
+      expect(ss).toBeDefined();
+      // 60 min @ IF 0.88 → (60/60) * 0.88^2 * 100 = 77.44 → 77
+      expect(ss!.durationMin).toBe(60);
+      expect(ss!.intensityFactor).toBe(0.88);
+      expect(ss!.load).toBe(77);
+    });
+
+    it("promotes exactly one easy ride to the weekly long endurance ride", () => {
+      const result = schedule(makeInput());
+      const longRides = result.filter((w) => w.name === "Long Endurance Ride");
+      expect(longRides).toHaveLength(1);
+      expect(longRides[0].durationMin).toBe(180);
+      expect(longRides[0].intensity).toBe("easy");
+      // 180 min @ IF 0.62 → 3 * 0.3844 * 100 = 115.3 → 115
+      expect(longRides[0].load).toBe(115);
+    });
+
+    it("gives weights a duration target but no TSS", () => {
+      const result = schedule(makeInput());
+      const weights = result.filter((w) => w.type === "weights");
+      expect(weights.length).toBeGreaterThan(0);
+      for (const w of weights) {
+        expect(w.durationMin).toBe(60);
+        expect(w.load).toBeUndefined();
+      }
+    });
   });
 });

@@ -281,5 +281,54 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     const sorted = [...plan[i]].sort((a, b) => typeRank(a.type) - typeRank(b.type));
     out.push(...sorted);
   }
+
+  attachLoadTargets(out, config);
   return out;
+}
+
+// Attach planned-load targets (TSS / duration / IF) to each generated workout so
+// the calendar shows them and Intervals.icu folds them into the planned CTL
+// curve. TSS = (minutes / 60) * IF^2 * 100. The latest easy ride of the week is
+// promoted to the single long endurance ride (century durability) — a longer
+// duration at the same easy IF. Weights get a duration only (no TSS/IF), which
+// matches how Intervals.icu treats WeightTraining.
+function attachLoadTargets(out: PlannedWorkout[], config: Config): void {
+  const lt = config.load_targets;
+  const tss = (min: number, ifv: number): number => Math.round((min / 60) * ifv * ifv * 100);
+
+  // Promote the last easy cycling ride to the weekly long ride.
+  let longIdx = -1;
+  for (let i = 0; i < out.length; i++) {
+    if (out[i].type === "cycling" && out[i].intensity === "easy") longIdx = i;
+  }
+
+  for (let i = 0; i < out.length; i++) {
+    const w = out[i];
+    if (w.type === "rest") continue;
+    if (w.type === "weights") {
+      w.durationMin = config.weight_training.duration_minutes;
+      continue;
+    }
+    if (w.type === "sweet_spot") {
+      w.durationMin = config.sweet_spot.duration_minutes;
+      w.intensityFactor = lt.sweet_spot_if;
+      w.load = tss(w.durationMin, lt.sweet_spot_if);
+      continue;
+    }
+    // cycling
+    if (w.intensity === "easy") {
+      const isLong = i === longIdx;
+      w.durationMin = isLong ? lt.long_minutes : lt.easy_minutes;
+      w.intensityFactor = lt.easy_if;
+      w.load = tss(w.durationMin, lt.easy_if);
+      if (isLong) {
+        w.name = "Long Endurance Ride";
+        w.description = `Weekly long endurance ride — steady Zone 2, ~${(lt.long_minutes / 60).toFixed(1)}h. Practice century fueling (~60-90g carb/hr). The durability anchor of the week.`;
+      }
+    } else {
+      w.durationMin = lt.hard_minutes;
+      w.intensityFactor = lt.hard_if;
+      w.load = tss(w.durationMin, lt.hard_if);
+    }
+  }
 }

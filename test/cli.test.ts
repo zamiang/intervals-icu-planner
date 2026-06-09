@@ -185,4 +185,33 @@ describe("workoutToEvent", () => {
     expect(event.category).toBe("NOTE");
     expect(event.type).toBe("Note");
   });
+
+  it("maps planned-load targets to icu_training_load, moving_time, and icu_intensity", () => {
+    const event = workoutToEvent({
+      date: "2026-04-20",
+      type: "cycling",
+      name: "Sweet Spot Intervals",
+      description: "",
+      intensity: "hard",
+      load: 77,
+      durationMin: 60,
+      intensityFactor: 0.88,
+    });
+    expect(event.icu_training_load).toBe(77);
+    expect(event.moving_time).toBe(3600); // 60 min → seconds
+    expect(event.icu_intensity).toBe(0.88);
+  });
+
+  it("omits planned-load fields when the workout has no targets", () => {
+    const event = workoutToEvent({
+      date: "2026-04-20",
+      type: "cycling",
+      name: "Hard Ride",
+      description: "",
+      intensity: "hard",
+    });
+    expect(event.icu_training_load).toBeUndefined();
+    expect(event.moving_time).toBeUndefined();
+    expect(event.icu_intensity).toBeUndefined();
+  });
 });

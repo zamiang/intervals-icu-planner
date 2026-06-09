@@ -38,6 +38,12 @@ Workout definitions and scheduling rules live in `config.yaml`:
   the sweet-spot day (default `1`). This is the 80/20 cap: every non-quality day
   fills as easy Zone 2, never "moderate". Raise to `2` only for a dedicated
   build block.
+- `load_targets` — planned TSS/duration/IF the planner attaches to each
+  generated workout (so the calendar shows targets and Intervals.icu folds them
+  into planned CTL). TSS = `(minutes / 60) * IF^2 * 100`. The latest easy ride
+  each week is auto-promoted to a single long endurance ride (`long_minutes`),
+  the century durability anchor. Keys: `easy_if`, `easy_minutes`, `long_minutes`,
+  `hard_if`, `hard_minutes`, `sweet_spot_if`.
 
 ## Commands
 

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { parse } from "yaml";
-import type { Config, SchedulingConfig, WorkoutDefinition } from "./types.js";
+import type { Config, LoadTargetsConfig, SchedulingConfig, WorkoutDefinition } from "./types.js";
 
 const SCHEDULING_DEFAULTS: SchedulingConfig = {
   tsb_fresh: 5,
@@ -11,6 +11,15 @@ const SCHEDULING_DEFAULTS: SchedulingConfig = {
   min_weight_gap_days: 2,
   max_weekly_ramp_pct: 7,
   hard_cycling_days: 1,
+};
+
+const LOAD_TARGETS_DEFAULTS: LoadTargetsConfig = {
+  easy_if: 0.62,
+  easy_minutes: 75,
+  long_minutes: 180,
+  hard_if: 0.88,
+  hard_minutes: 75,
+  sweet_spot_if: 0.88,
 };
 
 function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
@@ -34,6 +43,31 @@ function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
     if (obj[field] === undefined) continue;
     if (typeof obj[field] !== "number") {
       throw new Error(`scheduling.${field} must be a number`);
+    }
+    out[field] = obj[field] as number;
+  }
+  return out;
+}
+
+function validateLoadTargets(raw: unknown): Partial<LoadTargetsConfig> {
+  if (raw == null) return {};
+  if (typeof raw !== "object") {
+    throw new Error("load_targets must be an object");
+  }
+  const obj = raw as Record<string, unknown>;
+  const out: Partial<LoadTargetsConfig> = {};
+  const numericFields: (keyof LoadTargetsConfig)[] = [
+    "easy_if",
+    "easy_minutes",
+    "long_minutes",
+    "hard_if",
+    "hard_minutes",
+    "sweet_spot_if",
+  ];
+  for (const field of numericFields) {
+    if (obj[field] === undefined) continue;
+    if (typeof obj[field] !== "number") {
+      throw new Error(`load_targets.${field} must be a number`);
     }
     out[field] = obj[field] as number;
   }
@@ -77,5 +111,10 @@ export async function loadConfig(filePath: string): Promise<Config> {
     ...validateScheduling(doc.scheduling),
   };
 
-  return { weight_training, sweet_spot, scheduling };
+  const load_targets: LoadTargetsConfig = {
+    ...LOAD_TARGETS_DEFAULTS,
+    ...validateLoadTargets(doc.load_targets),
+  };
+
+  return { weight_training, sweet_spot, scheduling, load_targets };
 }

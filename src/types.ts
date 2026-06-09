@@ -19,10 +19,23 @@ export interface SchedulingConfig {
   hard_cycling_days: number; // default 1 — max hard interval rides/week (beyond the sweet-spot day); the 80/20 cap. Remaining days fill easy.
 }
 
+// Planned-load targets the scheduler attaches to each generated workout so the
+// calendar shows TSS/duration/IF and Intervals.icu folds them into planned CTL.
+// TSS is derived as (minutes / 60) * IF^2 * 100.
+export interface LoadTargetsConfig {
+  easy_if: number; // default 0.62 — intensity factor for easy Zone 2 fills
+  easy_minutes: number; // default 75 — duration of a standard easy ride
+  long_minutes: number; // default 180 — the one weekly long endurance ride (century durability)
+  hard_if: number; // default 0.88 — intensity factor for hard interval rides
+  hard_minutes: number; // default 75 — duration of a hard interval ride
+  sweet_spot_if: number; // default 0.88 — IF applied to the sweet_spot session (duration from its WorkoutDefinition)
+}
+
 export interface Config {
   weight_training: WorkoutDefinition;
   sweet_spot: WorkoutDefinition;
   scheduling: SchedulingConfig;
+  load_targets: LoadTargetsConfig;
 }
 
 // --- Intervals.icu ---
@@ -86,6 +99,10 @@ export interface PlannedWorkout {
   description: string;
   intensity: CyclingIntensity | "hard"; // weights and sweet_spot are always "hard"
   targetZone?: Zone; // set on hard cycling days when zone distribution is supplied
+  // Planned-load targets, attached by the scheduler and pushed to Intervals.icu.
+  load?: number; // planned TSS (icu_training_load)
+  durationMin?: number; // planned duration in minutes (pushed as moving_time seconds)
+  intensityFactor?: number; // planned IF (icu_intensity); omitted for weights
 }
 
 export interface SchedulerInput {
