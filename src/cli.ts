@@ -29,8 +29,7 @@ export function resolveRaceDate(
 // Whole weeks from `today` until `raceDate`, rounded up (a partial week counts).
 export function weeksUntil(today: string, raceDate: string): number {
   const dayMs = 24 * 60 * 60 * 1000;
-  const diff =
-    new Date(raceDate + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime();
+  const diff = new Date(raceDate + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime();
   return Math.ceil(diff / (7 * dayMs));
 }
 

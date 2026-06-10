@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { schedule, classifyFatigue, rampGuardTriggered, classifyPhase, phaseWeightSessions } from "../src/scheduler.js";
+import {
+  schedule,
+  classifyFatigue,
+  rampGuardTriggered,
+  classifyPhase,
+  phaseWeightSessions,
+} from "../src/scheduler.js";
 import { emptyDistribution } from "../src/zones.js";
 import type { SchedulerInput, IntervalsEvent, Config, PlannedWorkout } from "../src/types.js";
 

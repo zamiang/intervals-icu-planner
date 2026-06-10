@@ -1,6 +1,12 @@
 import { promises as fs } from "node:fs";
 import { parse } from "yaml";
-import type { Config, LoadTargetsConfig, PeriodizationConfig, SchedulingConfig, WorkoutDefinition } from "./types.js";
+import type {
+  Config,
+  LoadTargetsConfig,
+  PeriodizationConfig,
+  SchedulingConfig,
+  WorkoutDefinition,
+} from "./types.js";
 
 const SCHEDULING_DEFAULTS: SchedulingConfig = {
   tsb_fresh: 5,
@@ -161,5 +167,12 @@ export async function loadConfig(filePath: string): Promise<Config> {
     ...validatePeriodization(doc.periodization),
   };
 
-  return { weight_training, weight_training_taper, sweet_spot, scheduling, load_targets, periodization };
+  return {
+    weight_training,
+    weight_training_taper,
+    sweet_spot,
+    scheduling,
+    load_targets,
+    periodization,
+  };
 }

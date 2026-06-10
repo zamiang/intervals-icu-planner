@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { parseArgs, formatPlan, workoutToEvent, computeWeeklyRampPct, resolveRaceDate, weeksUntil } from "../src/cli.js";
+import {
+  parseArgs,
+  formatPlan,
+  workoutToEvent,
+  computeWeeklyRampPct,
+  resolveRaceDate,
+  weeksUntil,
+} from "../src/cli.js";
 import type { PlannedWorkout, WellnessEntry, IntervalsEvent } from "../src/types.js";
 
 describe("parseArgs", () => {
