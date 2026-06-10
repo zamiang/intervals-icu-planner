@@ -6,6 +6,7 @@ import {
   computeWeeklyRampPct,
   resolveRaceDate,
   weeksUntil,
+  latestTrainingLoad,
 } from "../src/cli.js";
 import type { PlannedWorkout, WellnessEntry, IntervalsEvent } from "../src/types.js";
 
@@ -254,5 +255,28 @@ describe("weeksUntil", () => {
     expect(weeksUntil("2026-06-09", "2026-06-09")).toBe(0);
     expect(weeksUntil("2026-06-09", "2026-06-10")).toBe(1);
     expect(weeksUntil("2026-06-09", "2026-09-26")).toBe(16);
+  });
+});
+
+describe("latestTrainingLoad", () => {
+  it("picks the most recent entry with a populated CTL", () => {
+    const range: WellnessEntry[] = [
+      { date: "2026-06-07", ctl: 55, atl: 60, tsb: -5 },
+      { date: "2026-06-08", ctl: 56, atl: 58, tsb: -2 },
+      { date: "2026-06-09", ctl: 0, atl: 0, tsb: 0 }, // today, not computed yet
+    ];
+    expect(latestTrainingLoad(range)).toEqual({ ctl: 56, atl: 58, tsb: -2 });
+  });
+
+  it("returns zeros when nothing is populated", () => {
+    expect(latestTrainingLoad([{ date: "2026-06-09", ctl: 0, atl: 0, tsb: 0 }])).toEqual({
+      ctl: 0,
+      atl: 0,
+      tsb: 0,
+    });
+  });
+
+  it("returns zeros for an empty range", () => {
+    expect(latestTrainingLoad([])).toEqual({ ctl: 0, atl: 0, tsb: 0 });
   });
 });

@@ -5,7 +5,7 @@ import { IntervalsClient } from "./intervals.js";
 import { XertClient } from "./xert.js";
 import { schedule, classifyFatigue, rampGuardTriggered } from "./scheduler.js";
 import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zones.js";
-import type { PlannedWorkout, IntervalsEvent, WellnessEntry, WorkoutType } from "./types.js";
+import type { PlannedWorkout, IntervalsEvent, WellnessEntry, WorkoutType, TrainingLoad } from "./types.js";
 
 // Earliest future A-priority race date (YYYY-MM-DD) from calendar events, else
 // the configured race_date fallback, else undefined when no race is known.
@@ -42,6 +42,16 @@ export function computeWeeklyRampPct(range: WellnessEntry[]): number | undefined
   const newest = sorted[sorted.length - 1];
   if (oldest.ctl <= 0) return undefined;
   return ((newest.ctl - oldest.ctl) / oldest.ctl) * 100;
+}
+
+// Most recent wellness entry with a populated CTL. Intervals.icu may return
+// today's entry with CTL 0 before activities sync, so reading a single day can
+// silently report zero fitness — fall back to the last day that actually has data.
+export function latestTrainingLoad(range: WellnessEntry[]): TrainingLoad {
+  const populated = range.filter((e) => e.ctl > 0).sort((a, b) => a.date.localeCompare(b.date));
+  const pick = populated[populated.length - 1];
+  if (!pick) return { ctl: 0, atl: 0, tsb: 0 };
+  return { ctl: pick.ctl, atl: pick.atl, tsb: pick.tsb };
 }
 
 export type Command = "plan" | "status" | "check";
@@ -182,12 +192,12 @@ async function main() {
     weekAgo.setDate(weekAgo.getDate() - 7);
     const weekAgoStr = weekAgo.toISOString().slice(0, 10);
 
-    const [load, info, activities, wellnessRange] = await Promise.all([
-      intervals.getTrainingLoad(today),
+    const [info, activities, wellnessRange] = await Promise.all([
       xert.getTrainingInfo(),
       intervals.getActivities(lookbackStr, today),
       intervals.getTrainingLoadRange(weekAgoStr, today),
     ]);
+    const load = latestTrainingLoad(wellnessRange);
     const distribution = computeDistribution(activities);
     const rampRatePct = computeWeeklyRampPct(wellnessRange);
 
@@ -239,14 +249,14 @@ async function main() {
   weekAgo.setDate(weekAgo.getDate() - 7);
   const weekAgoStr = weekAgo.toISOString().slice(0, 10);
 
-  const [events, load, info, activities, wellnessRange, raceEvents] = await Promise.all([
+  const [events, info, activities, wellnessRange, raceEvents] = await Promise.all([
     intervals.getEvents(today, endStr),
-    intervals.getTrainingLoad(today),
     xert.getTrainingInfo(),
     intervals.getActivities(lookbackStr, today),
     intervals.getTrainingLoadRange(weekAgoStr, today),
     intervals.getEvents(today, raceHorizonStr),
   ]);
+  const load = latestTrainingLoad(wellnessRange);
 
   const zoneDistribution = computeDistribution(activities);
   const rampRatePct = computeWeeklyRampPct(wellnessRange);
