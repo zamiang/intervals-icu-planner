@@ -25,7 +25,7 @@
 - A 2024 meta-analysis (Sun/Oliveira et al., n≈284–437) found **polarized (POL) superior only for VO₂peak** (SMD = 0.24, p = 0.04), and that edge was bigger in _highly trained_ athletes (SMD = 0.46) and _short_ (<12 wk) blocks. **POL was NOT superior for time-trial performance** (SMD = −0.01, p = 0.92).
 - A 2023 systematic review (7 studies) found **no periodization model favored over 8–12 weeks** in trained cyclists.
 - Cycling naturally tends toward a **pyramidal** distribution (lots of low intensity, a moderate amount of threshold, a little high-intensity). The **80/20 principle** (~80% low-intensity, 5–10% anaerobic) underpins both pyramidal and polarized.
-- **[2026 update — model choice is volume-dependent.]** The 2025–26 wave of reviews (Frontiers 2025, fphys.2025.1657892; practitioner syntheses of Cove et al. 2025 IJSPP) converges on a nuance the original report only implied: **polarized pays off mainly at high volume (~12+ h/week); riders under ~8 h/week generally respond better to pyramidal/sweet-spot.** Elites themselves run pyramidal in the base phase and reserve strict polarization for peaking. For a sub-12-h/week recreational rider this _strengthens_ the pyramidal/sweet-spot recommendation below — it's the volume-appropriate default, not a compromise.
+- **[2026 update — model choice is volume-dependent.]** The 2025–26 wave of reviews (Frontiers 2025, fphys.2025.1657892) converges on a nuance the original report only implied: **polarized pays off mainly at high volume (~12+ h/week); riders under ~8 h/week generally respond better to pyramidal/sweet-spot.** Elites themselves run pyramidal in the base phase and reserve strict polarization for peaking. For a sub-12-h/week recreational rider this _strengthens_ the pyramidal/sweet-spot recommendation below — it's the volume-appropriate default, not a compromise.
 - A 16-week pyramidal program (~57/31/12) in **recreational men, mean age 41** — the closest match to you — raised power at the 4 mmol lactate threshold with large effect sizes (d = 1.21 absolute, d = 1.54 W/kg). _Caveat: single-arm, uncontrolled, n=14 — shows pyramidal works, not that it's superior._
 - A seasonal **pyramidal → polarized sequence** produced the largest gains, but that evidence comes from elite _runners_, not cyclists.
 
@@ -113,7 +113,7 @@
 
 **Pacing (flat, ~500 ft):**
 
-- Target a **steady normalized power well below FTP** — roughly **65–75% of FTP** (low Zone 3 / high Zone 2) for a 5–7 hour ride. At 260 W FTP that's ~170–195 W average.
+- Target a **steady normalized power well below FTP** — roughly **65–75% of FTP** (low Zone 3 / high Zone 2) for a 5–7 hour ride. At 243 W FTP that's ~158–182 W average.
 - **Even/steady pacing** beats variable on flat terrain — surges cost disproportionate glycogen. Resist the temptation to chase wheels early.
 - On flat courses, **drafting is the single biggest free saving** — sitting in a group can cut your power demand 20–30% at the same speed. Group selection > individual heroics.
 
@@ -121,7 +121,7 @@ _(These are flagged as open questions in the research — worth a dedicated evid
 
 ---
 
-## 6. Raising FTP / W/kg from 3.4
+## 6. Raising FTP / W/kg from 3.2
 
 **Confidence: LOWER for specific numbers.** The research only verified general training-_structure_ findings, not concrete FTP-raising prescriptions. Below blends those verified findings with standard coaching practice (flagged).
 
@@ -206,9 +206,12 @@ For _you_ specifically: **(1)** ride a lot, mostly easy, pyramidal structure; **
 - Frontiers 2014 (low-cadence null RCT, veteran cyclists) — fphys.2014.00034
 - Valenzuela et al. 2022 (masters volume vs VO₂max) — mdpi.com/1660-4601/19/17/11050
 
-**Added 2026-06-10:**
+**Re-reviewed with full text 2026-06-10** (already in the primary list above; full DOIs and added detail):
 
-- Llanos-Lagos et al. 2025 EJAP strength meta-analysis — full text confirms ES/p-values cited in §2 and the no-moderation-by-participant-characteristics finding — PMC12881108 / doi 10.1007/s00421-025-05883-2
-- Frontiers Physiology 2025, intensity-distribution review (volume-dependent model choice) — fphys.2025.1657892 / PMC12568352
+- Llanos-Lagos et al. 2025 EJAP strength meta-analysis (= "2025 EJAP strength meta-analysis", PMC12881108 above) — full text confirms ES/p-values cited in §2 and the no-moderation-by-participant-characteristics finding — doi 10.1007/s00421-025-05883-2
+- Frontiers Physiology 2025 intensity-distribution review (= "Frontiers 2025", fphys.2025.1657892 above) — volume-dependent model choice — PMC12568352
+
+**Added 2026-06-10** (new citations):
+
 - Frontiers Sports & Active Living 2025, "Enhanced durability predicts success in amateur road cycling" — PMC12116599
 - 2025 EJAP systematic review, intensity as the driver of acute durability loss — doi 10.1007/s00421-025-05885-0
