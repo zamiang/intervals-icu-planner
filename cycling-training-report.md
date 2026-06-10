@@ -167,7 +167,7 @@ This is the section the report exists to answer. I compared the planned routine 
 
 - **Volume is healthy and consistent.** CTL ~63 and rising (ramp rate positive, mostly +2 to +7/week — within the plan's 7%/week cap), with genuine long rides logged (3.3 h on 5/30, 2.3 h on 6/5, multiple 1.5–2 h rides). For a flat-century build this is the right trajectory and the masters priority of §4 (protect consistency) is being met.
 - **But the intensity distribution is too hard, too often.** Recent rides repeatedly sit at IF 0.78–0.94 (e.g. 0.93 on 5/18, 0.94 on 5/20, 0.93 on 5/22, 0.90 on 6/5, 0.89 on 6/9). That is a lot of moderate-to-hard riding — the **"grey zone" §1 warns against** and that `config.yaml` deliberately tries to prevent with `hard_cycling_days: 1`. The plan's intent (≈80% genuinely easy) is sound; the execution is skewing harder than 80/20. **Fix:** make the easy days genuinely easy (the planner's 0.62 easy-IF target ≈ 150 W at 243 W FTP — ride _that_, not 0.8+), and keep true quality to the one sweet-spot day plus at most one hard ride.
-- **Re-baseline your targets to 243 W FTP.** Every wattage in this report and the sweet-spot session was written against 260 W and is now ~7% high. Sweet-spot at 88–94% of 243 W is ~214–228 W (the config still says ~230–244 W). Recompute zones, or re-test FTP and reset — §6's "re-test every 6–8 weeks" applies now.
+- **Re-baseline your targets to 243 W FTP.** Every wattage in this report and the sweet-spot session was written against 260 W and is now ~7% high. Sweet-spot at 88–94% of 243 W is ~214–228 W (config.yaml already updated). Recompute zones, or re-test FTP and reset — §6's "re-test every 6–8 weeks" applies now.
 
 ### What's already right — keep doing it
 
