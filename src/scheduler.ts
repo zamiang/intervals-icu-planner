@@ -9,8 +9,12 @@ import type {
 import { mostDeficientZone, zoneLabel, type Zone } from "./zones.js";
 
 function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr + "T00:00:00");
-  d.setDate(d.getDate() + days);
+  // Parse and mutate in UTC throughout. A bare "YYYY-MM-DD" is parsed as UTC
+  // midnight per spec, so staying in UTC keeps toISOString() on the same day —
+  // mixing local parsing with a UTC string shifts the whole window by a day on
+  // UTC+ hosts.
+  const d = new Date(dateStr);
+  d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
@@ -125,9 +129,13 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // Lock days that already have a planned calendar event OR a completed
   // activity — the planner only fills genuinely empty days, so a session
   // already logged today shouldn't get a duplicate piled on top of it.
+  // Intervals.icu returns start_date_local with a time component (e.g.
+  // "2026-04-21T00:00:00"), so normalize every source to its YYYY-MM-DD prefix
+  // before comparing — otherwise occupied days never match and get double-booked.
+  const dayKey = (d: string): string => d.slice(0, 10);
   const lockedDates = new Set([
-    ...existingEvents.map((e) => e.start_date_local),
-    ...(completedDates ?? []),
+    ...existingEvents.map((e) => dayKey(e.start_date_local)),
+    ...(completedDates ?? []).map(dayKey),
   ]);
   const dates: string[] = [];
   for (let i = 0; i < days; i++) dates.push(addDays(startDate, i));

@@ -134,6 +134,32 @@ describe("schedule", () => {
     expect(tue).toBeUndefined();
   });
 
+  it("locks days when existing events carry a time suffix (T00:00:00)", () => {
+    // Intervals.icu returns start_date_local with a time component, e.g.
+    // "2026-04-21T00:00:00". The lock check must compare on the date prefix, or
+    // it silently double-books days that already have events.
+    const existing: IntervalsEvent[] = [
+      {
+        id: 1,
+        start_date_local: "2026-04-21T00:00:00",
+        name: "Group Ride",
+        category: "WORKOUT",
+        type: "Ride",
+      },
+    ];
+    const result = schedule(makeInput({ existingEvents: existing }));
+    const onLockedDay = result.filter((w) => w.date === "2026-04-21");
+    expect(onLockedDay).toHaveLength(0);
+  });
+
+  it("locks days from completedDates that carry a time suffix", () => {
+    // completedDates normally arrives pre-trimmed from the CLI, but the
+    // scheduler normalizes it too — prove the timestamp path locks its day.
+    const result = schedule(makeInput({ completedDates: ["2026-04-21T00:00:00"] }));
+    const onLockedDay = result.filter((w) => w.date === "2026-04-21");
+    expect(onLockedDay).toHaveLength(0);
+  });
+
   it("schedules easy rides when fatigued (low TSB)", () => {
     const result = schedule(
       makeInput({

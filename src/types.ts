@@ -51,7 +51,7 @@ export interface Config {
 
 export interface IntervalsEvent {
   id?: number;
-  start_date_local: string; // YYYY-MM-DD
+  start_date_local: string; // we write YYYY-MM-DD; the API returns it with a time component (e.g. "2026-04-21T00:00:00") on read — normalize before comparing
   name: string;
   category: string; // "WORKOUT", "NOTE", etc.
   description?: string;
@@ -122,6 +122,6 @@ export interface SchedulerInput {
   config: Config;
   zoneDistribution?: Record<Zone, number>; // trailing TSS-weighted zone mix
   rampRatePct?: number; // trailing-week CTL ramp; triggers guard above threshold
-  completedDates?: string[]; // YYYY-MM-DD dates that already have a logged activity; locked like existing events
+  completedDates?: string[]; // dates with a logged activity; locked like existing events. Callers pass YYYY-MM-DD, but the scheduler normalizes to the date prefix so timestamps are accepted too
   weeksToRace?: number; // whole weeks until the A race; undefined when no race is known
 }
