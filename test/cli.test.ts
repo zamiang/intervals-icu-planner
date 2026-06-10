@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { parseArgs, formatPlan, workoutToEvent, computeWeeklyRampPct } from "../src/cli.js";
-import type { PlannedWorkout, WellnessEntry } from "../src/types.js";
+import {
+  parseArgs,
+  formatPlan,
+  workoutToEvent,
+  computeWeeklyRampPct,
+  resolveRaceDate,
+  weeksUntil,
+} from "../src/cli.js";
+import type { PlannedWorkout, WellnessEntry, IntervalsEvent } from "../src/types.js";
 
 describe("parseArgs", () => {
   it("parses 'plan' command", () => {
@@ -213,5 +220,39 @@ describe("workoutToEvent", () => {
     expect(event.icu_training_load).toBeUndefined();
     expect(event.moving_time).toBeUndefined();
     expect(event.icu_intensity).toBeUndefined();
+  });
+});
+
+describe("resolveRaceDate", () => {
+  const ev = (date: string, category: string): IntervalsEvent => ({
+    start_date_local: date,
+    name: "x",
+    category,
+  });
+
+  it("returns the earliest future RACE_A event date", () => {
+    const events = [ev("2026-10-10T07:00:00", "RACE_A"), ev("2026-09-26T07:00:00", "RACE_A")];
+    expect(resolveRaceDate(events, "2026-06-09", null)).toBe("2026-09-26");
+  });
+
+  it("ignores past races and non-race events", () => {
+    const events = [ev("2026-01-01T07:00:00", "RACE_A"), ev("2026-09-26T07:00:00", "WORKOUT")];
+    expect(resolveRaceDate(events, "2026-06-09", null)).toBeUndefined();
+  });
+
+  it("falls back to config race_date when no RACE_A is present", () => {
+    expect(resolveRaceDate([], "2026-06-09", "2026-09-26")).toBe("2026-09-26");
+  });
+
+  it("ignores a past fallback race_date", () => {
+    expect(resolveRaceDate([], "2026-06-09", "2026-01-01")).toBeUndefined();
+  });
+});
+
+describe("weeksUntil", () => {
+  it("rounds up partial weeks", () => {
+    expect(weeksUntil("2026-06-09", "2026-06-09")).toBe(0);
+    expect(weeksUntil("2026-06-09", "2026-06-10")).toBe(1);
+    expect(weeksUntil("2026-06-09", "2026-09-26")).toBe(16);
   });
 });

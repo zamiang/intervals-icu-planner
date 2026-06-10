@@ -7,6 +7,32 @@ import { schedule, classifyFatigue, rampGuardTriggered } from "./scheduler.js";
 import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zones.js";
 import type { PlannedWorkout, IntervalsEvent, WellnessEntry, WorkoutType } from "./types.js";
 
+// Earliest future A-priority race date (YYYY-MM-DD) from calendar events, else
+// the configured race_date fallback, else undefined when no race is known.
+export function resolveRaceDate(
+  events: IntervalsEvent[],
+  today: string,
+  raceDateFallback: string | null,
+): string | undefined {
+  const races = events
+    .filter((e) => e.category === "RACE_A")
+    .map((e) => e.start_date_local.slice(0, 10))
+    .filter((d) => d >= today)
+    .sort();
+  if (races.length > 0) return races[0];
+  if (raceDateFallback && raceDateFallback.slice(0, 10) >= today) {
+    return raceDateFallback.slice(0, 10);
+  }
+  return undefined;
+}
+
+// Whole weeks from `today` until `raceDate`, rounded up (a partial week counts).
+export function weeksUntil(today: string, raceDate: string): number {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const diff = new Date(raceDate + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime();
+  return Math.ceil(diff / (7 * dayMs));
+}
+
 // CTL ramp = (today - 7d ago) / (7d ago) * 100. Returns undefined when the
 // 7-day-ago wellness entry is missing or zero (new athlete, gap in syncing).
 export function computeWeeklyRampPct(range: WellnessEntry[]): number | undefined {
@@ -203,6 +229,9 @@ async function main() {
   const endDate = new Date();
   endDate.setDate(endDate.getDate() + 6);
   const endStr = endDate.toISOString().slice(0, 10);
+  const raceHorizon = new Date();
+  raceHorizon.setDate(raceHorizon.getDate() + 364);
+  const raceHorizonStr = raceHorizon.toISOString().slice(0, 10);
   const lookbackStart = new Date();
   lookbackStart.setDate(lookbackStart.getDate() - 28);
   const lookbackStr = lookbackStart.toISOString().slice(0, 10);
@@ -210,12 +239,13 @@ async function main() {
   weekAgo.setDate(weekAgo.getDate() - 7);
   const weekAgoStr = weekAgo.toISOString().slice(0, 10);
 
-  const [events, load, info, activities, wellnessRange] = await Promise.all([
+  const [events, load, info, activities, wellnessRange, raceEvents] = await Promise.all([
     intervals.getEvents(today, endStr),
     intervals.getTrainingLoad(today),
     xert.getTrainingInfo(),
     intervals.getActivities(lookbackStr, today),
     intervals.getTrainingLoadRange(weekAgoStr, today),
+    intervals.getEvents(today, raceHorizonStr),
   ]);
 
   const zoneDistribution = computeDistribution(activities);
@@ -230,6 +260,9 @@ async function main() {
     ),
   ];
 
+  const raceDate = resolveRaceDate(raceEvents, today, config.periodization.race_date);
+  const weeksToRace = raceDate ? weeksUntil(today, raceDate) : undefined;
+
   const planned = schedule({
     startDate: today,
     existingEvents: events,
@@ -239,6 +272,7 @@ async function main() {
     zoneDistribution,
     rampRatePct,
     completedDates,
+    weeksToRace,
   });
 
   const fatigue = classifyFatigue(load.tsb, config);

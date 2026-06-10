@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { schedule, classifyFatigue, rampGuardTriggered } from "../src/scheduler.js";
+import {
+  schedule,
+  classifyFatigue,
+  rampGuardTriggered,
+  classifyPhase,
+  phaseWeightSessions,
+} from "../src/scheduler.js";
 import { emptyDistribution } from "../src/zones.js";
 import type { SchedulerInput, IntervalsEvent, Config, PlannedWorkout } from "../src/types.js";
 
@@ -24,6 +30,7 @@ const BASE_CONFIG: Config = {
     tsb_very_fatigued: -20,
     weight_sessions: 2,
     weight_sessions_very_fatigued: 1,
+    weight_sessions_taper: 1,
     min_weight_gap_days: 2,
     max_weekly_ramp_pct: 7,
     hard_cycling_days: 1,
@@ -35,6 +42,11 @@ const BASE_CONFIG: Config = {
     hard_if: 0.88,
     hard_minutes: 75,
     sweet_spot_if: 0.88,
+  },
+  periodization: {
+    taper_weeks: 4,
+    taper_zero_weeks: 1,
+    race_date: null,
   },
 };
 
@@ -525,6 +537,89 @@ describe("schedule", () => {
       expect(ride.description).toContain("SMART Workout 42");
       expect(ride.description).toContain("4x4min VO2max");
     }
+  });
+
+  describe("classifyPhase / phaseWeightSessions", () => {
+    it("returns undefined when weeksToRace is undefined", () => {
+      expect(classifyPhase(undefined, BASE_CONFIG)).toBeUndefined();
+      expect(phaseWeightSessions(undefined, undefined, BASE_CONFIG)).toBe(2);
+    });
+
+    it("classifies block at or beyond taper_weeks", () => {
+      expect(classifyPhase(4, BASE_CONFIG)).toBe("block");
+      expect(classifyPhase(12, BASE_CONFIG)).toBe("block");
+      expect(phaseWeightSessions("block", 12, BASE_CONFIG)).toBe(2);
+    });
+
+    it("classifies taper below taper_weeks", () => {
+      expect(classifyPhase(3, BASE_CONFIG)).toBe("taper");
+      expect(phaseWeightSessions("taper", 3, BASE_CONFIG)).toBe(1);
+    });
+
+    it("returns zero sessions in the final taper week", () => {
+      expect(classifyPhase(0, BASE_CONFIG)).toBe("taper");
+      expect(phaseWeightSessions("taper", 0, BASE_CONFIG)).toBe(0);
+    });
+  });
+
+  describe("periodized strength scheduling", () => {
+    const taperConfig: Config = {
+      ...BASE_CONFIG,
+      weight_training_taper: {
+        name: "Taper Lift",
+        duration_minutes: 30,
+        description: "Squat + deadlift, low volume",
+      },
+    };
+
+    it("uses the block routine and full session count when far from the race", () => {
+      const plan = schedule(makeInput({ config: taperConfig, weeksToRace: 12 }));
+      const weights = plan.filter((w) => w.type === "weights");
+      expect(weights.length).toBe(2);
+      expect(weights.every((w) => w.name === "Strength")).toBe(true);
+      expect(weights.every((w) => w.durationMin === 60)).toBe(true);
+    });
+
+    it("uses the taper routine and one session inside the taper window", () => {
+      const plan = schedule(makeInput({ config: taperConfig, weeksToRace: 3 }));
+      const weights = plan.filter((w) => w.type === "weights");
+      expect(weights.length).toBe(1);
+      expect(weights[0].name).toBe("Taper Lift");
+      expect(weights[0].durationMin).toBe(30);
+    });
+
+    it("places no strength in the final taper week", () => {
+      const plan = schedule(makeInput({ config: taperConfig, weeksToRace: 0 }));
+      expect(plan.filter((w) => w.type === "weights").length).toBe(0);
+    });
+
+    it("falls back to the block routine when no taper variant is defined", () => {
+      const plan = schedule(makeInput({ config: BASE_CONFIG, weeksToRace: 3 }));
+      const weights = plan.filter((w) => w.type === "weights");
+      expect(weights.length).toBe(1);
+      expect(weights[0].name).toBe("Strength");
+      expect(weights[0].durationMin).toBe(60);
+    });
+
+    it("is unchanged when weeksToRace is undefined (backward compat)", () => {
+      const plan = schedule(makeInput({ config: BASE_CONFIG }));
+      expect(plan.filter((w) => w.type === "weights").length).toBe(2);
+    });
+
+    it("lets very-fatigued cap the block phase below its phase count", () => {
+      // block asks for 2; very-fatigued caps at weight_sessions_very_fatigued (1).
+      // Effective count is min(2, 1) = 1, and the block routine is still used.
+      const plan = schedule(
+        makeInput({
+          config: taperConfig,
+          weeksToRace: 12,
+          trainingLoad: { ctl: 56, atl: 86, tsb: -30 },
+        }),
+      );
+      const weights = plan.filter((w) => w.type === "weights");
+      expect(weights.length).toBe(1);
+      expect(weights[0].name).toBe("Strength");
+    });
   });
 
   describe("planned-load targets", () => {

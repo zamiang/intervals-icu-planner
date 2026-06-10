@@ -14,6 +14,7 @@ export interface SchedulingConfig {
   tsb_very_fatigued: number; // default -20 — below this, drop sweet-spot and reduce weights
   weight_sessions: number; // default 2
   weight_sessions_very_fatigued: number; // default 1 — weight sessions when TSB < tsb_very_fatigued
+  weight_sessions_taper: number; // default 1 — weight sessions/week during the race taper
   min_weight_gap_days: number; // default 2
   max_weekly_ramp_pct: number; // default 7 — CTL ramp above this triggers an easy-bias guard
   hard_cycling_days: number; // default 1 — max hard interval rides/week (beyond the sweet-spot day); the 80/20 cap. Remaining days fill easy.
@@ -31,11 +32,19 @@ export interface LoadTargetsConfig {
   sweet_spot_if: number; // default 0.88 — IF applied to the sweet_spot session (duration from its WorkoutDefinition)
 }
 
+export interface PeriodizationConfig {
+  taper_weeks: number; // default 4 — fewer weeks-to-race than this → taper phase
+  taper_zero_weeks: number; // default 1 — fewer weeks-to-race than this → no strength
+  race_date: string | null; // default null — ISO date fallback when no RACE_A event exists
+}
+
 export interface Config {
   weight_training: WorkoutDefinition;
+  weight_training_taper?: WorkoutDefinition; // optional; falls back to weight_training
   sweet_spot: WorkoutDefinition;
   scheduling: SchedulingConfig;
   load_targets: LoadTargetsConfig;
+  periodization: PeriodizationConfig;
 }
 
 // --- Intervals.icu ---
@@ -114,4 +123,5 @@ export interface SchedulerInput {
   zoneDistribution?: Record<Zone, number>; // trailing TSS-weighted zone mix
   rampRatePct?: number; // trailing-week CTL ramp; triggers guard above threshold
   completedDates?: string[]; // YYYY-MM-DD dates that already have a logged activity; locked like existing events
+  weeksToRace?: number; // whole weeks until the A race; undefined when no race is known
 }

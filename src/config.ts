@@ -1,6 +1,12 @@
 import { promises as fs } from "node:fs";
 import { parse } from "yaml";
-import type { Config, LoadTargetsConfig, SchedulingConfig, WorkoutDefinition } from "./types.js";
+import type {
+  Config,
+  LoadTargetsConfig,
+  PeriodizationConfig,
+  SchedulingConfig,
+  WorkoutDefinition,
+} from "./types.js";
 
 const SCHEDULING_DEFAULTS: SchedulingConfig = {
   tsb_fresh: 5,
@@ -8,9 +14,16 @@ const SCHEDULING_DEFAULTS: SchedulingConfig = {
   tsb_very_fatigued: -20,
   weight_sessions: 2,
   weight_sessions_very_fatigued: 1,
+  weight_sessions_taper: 1,
   min_weight_gap_days: 2,
   max_weekly_ramp_pct: 7,
   hard_cycling_days: 1,
+};
+
+const PERIODIZATION_DEFAULTS: PeriodizationConfig = {
+  taper_weeks: 4,
+  taper_zero_weeks: 1,
+  race_date: null,
 };
 
 const LOAD_TARGETS_DEFAULTS: LoadTargetsConfig = {
@@ -35,6 +48,7 @@ function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
     "tsb_very_fatigued",
     "weight_sessions",
     "weight_sessions_very_fatigued",
+    "weight_sessions_taper",
     "min_weight_gap_days",
     "max_weekly_ramp_pct",
     "hard_cycling_days",
@@ -74,6 +88,29 @@ function validateLoadTargets(raw: unknown): Partial<LoadTargetsConfig> {
   return out;
 }
 
+function validatePeriodization(raw: unknown): Partial<PeriodizationConfig> {
+  if (raw == null) return {};
+  if (typeof raw !== "object") {
+    throw new Error("periodization must be an object");
+  }
+  const obj = raw as Record<string, unknown>;
+  const out: Partial<PeriodizationConfig> = {};
+  for (const field of ["taper_weeks", "taper_zero_weeks"] as const) {
+    if (obj[field] === undefined) continue;
+    if (typeof obj[field] !== "number") {
+      throw new Error(`periodization.${field} must be a number`);
+    }
+    out[field] = obj[field] as number;
+  }
+  if (obj.race_date !== undefined) {
+    if (obj.race_date !== null && typeof obj.race_date !== "string") {
+      throw new Error("periodization.race_date must be a string or null");
+    }
+    out.race_date = obj.race_date as string | null;
+  }
+  return out;
+}
+
 function validateWorkout(raw: unknown, field: string): WorkoutDefinition {
   if (!raw || typeof raw !== "object") {
     throw new Error(`Config missing required field: ${field}`);
@@ -95,6 +132,11 @@ function validateWorkout(raw: unknown, field: string): WorkoutDefinition {
   };
 }
 
+function validateOptionalWorkout(raw: unknown, field: string): WorkoutDefinition | undefined {
+  if (raw == null) return undefined;
+  return validateWorkout(raw, field);
+}
+
 export async function loadConfig(filePath: string): Promise<Config> {
   const raw = await fs.readFile(filePath, "utf8");
   const doc = parse(raw);
@@ -105,6 +147,10 @@ export async function loadConfig(filePath: string): Promise<Config> {
 
   const weight_training = validateWorkout(doc.weight_training, "weight_training");
   const sweet_spot = validateWorkout(doc.sweet_spot, "sweet_spot");
+  const weight_training_taper = validateOptionalWorkout(
+    doc.weight_training_taper,
+    "weight_training_taper",
+  );
 
   const scheduling: SchedulingConfig = {
     ...SCHEDULING_DEFAULTS,
@@ -116,5 +162,17 @@ export async function loadConfig(filePath: string): Promise<Config> {
     ...validateLoadTargets(doc.load_targets),
   };
 
-  return { weight_training, sweet_spot, scheduling, load_targets };
+  const periodization: PeriodizationConfig = {
+    ...PERIODIZATION_DEFAULTS,
+    ...validatePeriodization(doc.periodization),
+  };
+
+  return {
+    weight_training,
+    weight_training_taper,
+    sweet_spot,
+    scheduling,
+    load_targets,
+    periodization,
+  };
 }

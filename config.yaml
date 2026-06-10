@@ -49,6 +49,29 @@ weight_training:
     with good form, add load (or reps on bodyweight moves) next session. If a lift
     sits at the same weight x reps for 3+ sessions, it has stalled — bump it.
 
+weight_training_taper:
+  name: "Strength Taper"
+  duration_minutes: 30
+  description: |
+    Race-approach maintenance — keep the heavy stimulus, cut the fatigue.
+    Frequency drops to 1x/week; this is NOT a deload of load, only of volume.
+
+    Warm-Up (6 min)
+    Deadbugs (2x10), band pull-aparts, bodyweight squats, then 2 light ramp-up
+    sets on the squat.
+
+    Heavy Compounds (20 min) — same load as your block, far less volume.
+    1. Goblet or Barbell Back Squat — 2x4-5 @ heavy
+       Keep the load you built. Crisp, fast reps; stop well short of failure.
+    2. Romanian / Trap-Bar Deadlift — 2x4-5 @ heavy
+       Heavy hinge, low volume. Leave the gym feeling fresh, not cooked.
+
+    Cooldown (4 min)
+    Hip flexor stretch, pigeon pose. Skip accessories — the goal is to retain
+    strength while staying race-fresh.
+
+    Note: drop strength entirely in the final race week.
+
 sweet_spot:
   name: "Sweet Spot Intervals"
   duration_minutes: 60
@@ -81,12 +104,18 @@ sweet_spot:
     evidence-backed route to force adaptations; that's the weight_training day.
     See cycling-training-report.md for full citations.
 
+periodization:
+  taper_weeks: 4 # fewer weeks-to-race than this → taper routine, 1x/week
+  taper_zero_weeks: 1 # final week before the race → no strength
+  race_date: null # fallback only; the RACE_A calendar event is used when present
+
 scheduling:
   tsb_fresh: 5
   tsb_fatigued: -10
   tsb_very_fatigued: -20
   weight_sessions: 2
   weight_sessions_very_fatigued: 1
+  weight_sessions_taper: 1
   min_weight_gap_days: 2
   max_weekly_ramp_pct: 7
   # 80/20 enforcement: hard interval rides per week, on top of the one

@@ -145,6 +145,45 @@ scheduling:
     expect(config.scheduling.min_weight_gap_days).toBe(2);
   });
 
+  it("defaults periodization and weight_sessions_taper when absent", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(file, VALID_YAML);
+    const config = await loadConfig(file);
+    expect(config.periodization).toEqual({
+      taper_weeks: 4,
+      taper_zero_weeks: 1,
+      race_date: null,
+    });
+    expect(config.scheduling.weight_sessions_taper).toBe(1);
+    expect(config.weight_training_taper).toBeUndefined();
+  });
+
+  it("loads an optional taper routine and periodization overrides", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    const yamlWithTaper =
+      VALID_YAML.replace("scheduling:", "scheduling:\n  weight_sessions_taper: 1") +
+      `
+weight_training_taper:
+  name: "Taper Lift"
+  duration_minutes: 30
+  description: "Squat + deadlift, 2 sets"
+periodization:
+  taper_weeks: 3
+  taper_zero_weeks: 2
+  race_date: "2026-09-26"
+`;
+    await fs.writeFile(file, yamlWithTaper);
+    const config = await loadConfig(file);
+    expect(config.weight_training_taper).toEqual({
+      name: "Taper Lift",
+      duration_minutes: 30,
+      description: "Squat + deadlift, 2 sets",
+    });
+    expect(config.periodization.taper_weeks).toBe(3);
+    expect(config.periodization.taper_zero_weeks).toBe(2);
+    expect(config.periodization.race_date).toBe("2026-09-26");
+  });
+
   it("throws when a scheduling field has the wrong type", async () => {
     const yaml = `
 weight_training:
