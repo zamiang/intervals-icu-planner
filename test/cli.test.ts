@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   parseArgs,
   formatPlan,
@@ -7,6 +7,7 @@ import {
   resolveRaceDate,
   weeksUntil,
   latestTrainingLoad,
+  pushPlan,
 } from "../src/cli.js";
 import type { PlannedWorkout, WellnessEntry, IntervalsEvent } from "../src/types.js";
 
@@ -278,5 +279,32 @@ describe("latestTrainingLoad", () => {
 
   it("returns zeros for an empty range", () => {
     expect(latestTrainingLoad([])).toEqual({ ctl: 0, atl: 0, tsb: 0 });
+  });
+});
+
+describe("pushPlan", () => {
+  const plan: PlannedWorkout[] = [
+    { date: "2026-06-08", type: "cycling", name: "Easy Ride", description: "z2", intensity: "easy" },
+    { date: "2026-06-09", type: "rest", name: "Rest Day", description: "off", intensity: "easy" },
+    { date: "2026-06-10", type: "weights", name: "Strength", description: "lift", intensity: "hard" },
+  ];
+
+  it("skips rest days and pushes the rest", async () => {
+    const createEvent = vi.fn().mockResolvedValue({});
+    const result = await pushPlan({ createEvent }, plan, () => {});
+    expect(createEvent).toHaveBeenCalledTimes(2); // rest day skipped
+    expect(result.created).toHaveLength(2);
+    expect(result.failed).toHaveLength(0);
+  });
+
+  it("records failures and keeps going", async () => {
+    const createEvent = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("503 boom"))
+      .mockResolvedValueOnce({});
+    const result = await pushPlan({ createEvent }, plan, () => {});
+    expect(createEvent).toHaveBeenCalledTimes(2);
+    expect(result.created).toHaveLength(1);
+    expect(result.failed).toEqual([{ date: "2026-06-08", name: "Easy Ride", error: "503 boom" }]);
   });
 });

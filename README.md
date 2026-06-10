@@ -18,10 +18,10 @@ Requires Node.js 20+.
 
 Credentials live in `.env`:
 
-| Variable            | What it is                                |
-| ------------------- | ----------------------------------------- |
-| `INTERVALS_API_KEY` | Intervals.icu API key (Settings → API)    |
-| `XERT_USERNAME`     | Xert account email                        |
+| Variable            | What it is                                   |
+| ------------------- | -------------------------------------------- |
+| `INTERVALS_API_KEY` | Intervals.icu API key (Settings → API)       |
+| `XERT_USERNAME`     | Xert account email                           |
 | `XERT_PASSWORD`     | Xert account password (OAuth password grant) |
 
 Workout definitions and scheduling rules live in `config.yaml`:

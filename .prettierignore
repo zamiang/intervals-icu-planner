@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.venv/
+ref/
+strength-workout/
+package-lock.json

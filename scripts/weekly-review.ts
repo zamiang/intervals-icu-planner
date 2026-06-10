@@ -46,7 +46,16 @@ type Wk = {
 const weeks = new Map<string, Wk>();
 const wk = (k: string): Wk =>
   weeks.get(k) ??
-  (weeks.set(k, { tss: 0, hours: 0, rides: 0, weights: 0, z12s: 0, hards: 0, longRide: 0, byType: {} }),
+  (weeks.set(k, {
+    tss: 0,
+    hours: 0,
+    rides: 0,
+    weights: 0,
+    z12s: 0,
+    hards: 0,
+    longRide: 0,
+    byType: {},
+  }),
   weeks.get(k)!);
 
 for (const a of acts) {
@@ -92,9 +101,7 @@ const keys = [...weeks.keys()].sort();
 console.log(
   `\nWeekly training review — last ${WEEKS} weeks (${keys[0]} → ${keys[keys.length - 1]})\n`,
 );
-console.log(
-  "week start   TSS   hrs  rides  wt   easy%  long   CTL  ramp   mix (TSS by type)",
-);
+console.log("week start   TSS   hrs  rides  wt   easy%  long   CTL  ramp   mix (TSS by type)");
 console.log("─".repeat(92));
 let prevCtl = 0;
 for (const k of keys) {

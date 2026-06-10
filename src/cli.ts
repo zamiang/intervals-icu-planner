@@ -5,7 +5,13 @@ import { IntervalsClient } from "./intervals.js";
 import { XertClient } from "./xert.js";
 import { schedule, classifyFatigue, rampGuardTriggered } from "./scheduler.js";
 import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zones.js";
-import type { PlannedWorkout, IntervalsEvent, WellnessEntry, WorkoutType, TrainingLoad } from "./types.js";
+import type {
+  PlannedWorkout,
+  IntervalsEvent,
+  WellnessEntry,
+  WorkoutType,
+  TrainingLoad,
+} from "./types.js";
 
 // Earliest future A-priority race date (YYYY-MM-DD) from calendar events, else
 // the configured race_date fallback, else undefined when no race is known.
@@ -140,6 +146,36 @@ export function workoutToEvent(w: PlannedWorkout): IntervalsEvent {
   if (typeof w.durationMin === "number") event.moving_time = Math.round(w.durationMin * 60);
   if (typeof w.intensityFactor === "number") event.icu_intensity = w.intensityFactor;
   return event;
+}
+
+export interface PushResult {
+  created: string[];
+  failed: { date: string; name: string; error: string }[];
+}
+
+// Push every non-rest workout, recording outcomes instead of aborting on the
+// first failure. Re-running is safe — days that landed are locked as existing
+// events and skipped next time — so the caller just needs to know what to retry.
+export async function pushPlan(
+  intervals: { createEvent: (e: IntervalsEvent) => Promise<unknown> },
+  planned: PlannedWorkout[],
+  log: (msg: string) => void = console.log,
+): Promise<PushResult> {
+  const created: string[] = [];
+  const failed: PushResult["failed"] = [];
+  for (const w of planned) {
+    if (w.type === "rest") continue; // don't push rest days
+    try {
+      await intervals.createEvent(workoutToEvent(w));
+      created.push(`${w.date} — ${w.name}`);
+      log(`  Created: ${w.date} — ${w.name}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      failed.push({ date: w.date, name: w.name, error: msg });
+      log(`  FAILED:  ${w.date} — ${w.name} — ${msg}`);
+    }
+  }
+  return { created, failed };
 }
 
 async function runCheck(intervals: IntervalsClient, xert: XertClient): Promise<number> {
@@ -313,13 +349,16 @@ async function main() {
   }
 
   console.log("Pushing to Intervals.icu...");
-  for (const w of planned) {
-    if (w.type === "rest") continue; // don't push rest days
-    const event = workoutToEvent(w);
-    await intervals.createEvent(event);
-    console.log(`  Created: ${w.date} — ${w.name}`);
+  const { created, failed } = await pushPlan(intervals, planned);
+  if (failed.length === 0) {
+    console.log(`Done. Created ${created.length} event(s).`);
+  } else {
+    console.log(
+      `Created ${created.length}, failed ${failed.length}. ` +
+        `Re-run to retry the failed days — events already created are skipped.`,
+    );
+    process.exitCode = 1;
   }
-  console.log("Done.");
 }
 
 // Only run main when executed directly (not when imported by tests)

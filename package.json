@@ -14,8 +14,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ test/",
-    "format": "prettier --write src/ test/",
-    "format:check": "prettier --check src/ test/"
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "engines": {
     "node": ">=20"

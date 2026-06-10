@@ -59,7 +59,13 @@ describe("IntervalsClient", () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => [
-          { id: 1, start_date_local: "2026-04-20", name: "Ride", category: "WORKOUT", type: "Ride" },
+          {
+            id: 1,
+            start_date_local: "2026-04-20",
+            name: "Ride",
+            category: "WORKOUT",
+            type: "Ride",
+          },
           { name: "no date — should be dropped", category: "WORKOUT" },
           { id: "not-a-number", start_date_local: "2026-04-21", category: "RACE_A" },
         ],
