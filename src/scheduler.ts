@@ -109,9 +109,10 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     zoneDistribution,
     rampRatePct,
     completedDates,
+    weeksToRace,
   } = input;
   const days = 7;
-  const { scheduling, weight_training, sweet_spot } = config;
+  const { scheduling, weight_training, weight_training_taper, sweet_spot } = config;
   const guardOn = rampGuardTriggered(rampRatePct, config);
 
   // Track zones already assigned to hard rides this week so consecutive hard
@@ -148,9 +149,17 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // weeks (fatigued or worse) it just piles two hard sessions together and
   // defeats the recovery intent, so weights get their own spaced-out days.
   const stackWeightsOnHardDays = fatigue === "fresh" || fatigue === "moderate";
-  const weightSessionsTarget = veryFatigued
+  const phase = classifyPhase(weeksToRace, config);
+  const strengthRoutine =
+    phase === "taper" ? (weight_training_taper ?? weight_training) : weight_training;
+  // Phase asks for a session count; fatigue can only reduce it, never inflate it.
+  const fatigueSessions = veryFatigued
     ? scheduling.weight_sessions_very_fatigued
     : scheduling.weight_sessions;
+  const weightSessionsTarget = Math.min(
+    phaseWeightSessions(phase, weeksToRace, config),
+    fatigueSessions,
+  );
 
   // Each day can hold multiple workouts (hard cycling + weights = one stacked
   // training day, two PlannedWorkout entries).
@@ -258,9 +267,10 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     plan[i].push({
       date: dates[i],
       type: "weights",
-      name: weight_training.name,
-      description: weight_training.description,
+      name: strengthRoutine.name,
+      description: strengthRoutine.description,
       intensity: "hard",
+      durationMin: strengthRoutine.duration_minutes,
     });
   }
 
@@ -336,7 +346,7 @@ function attachLoadTargets(out: PlannedWorkout[], config: Config): void {
     const w = out[i];
     if (w.type === "rest") continue;
     if (w.type === "weights") {
-      w.durationMin = config.weight_training.duration_minutes;
+      w.durationMin = w.durationMin ?? config.weight_training.duration_minutes;
       continue;
     }
     if (w.type === "sweet_spot") {

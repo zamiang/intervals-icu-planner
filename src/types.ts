@@ -123,4 +123,5 @@ export interface SchedulerInput {
   zoneDistribution?: Record<Zone, number>; // trailing TSS-weighted zone mix
   rampRatePct?: number; // trailing-week CTL ramp; triggers guard above threshold
   completedDates?: string[]; // YYYY-MM-DD dates that already have a logged activity; locked like existing events
+  weeksToRace?: number; // whole weeks until the A race; undefined when no race is known
 }

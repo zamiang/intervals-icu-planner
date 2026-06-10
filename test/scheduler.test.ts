@@ -556,6 +556,51 @@ describe("schedule", () => {
     });
   });
 
+  describe("periodized strength scheduling", () => {
+    const taperConfig: Config = {
+      ...BASE_CONFIG,
+      weight_training_taper: {
+        name: "Taper Lift",
+        duration_minutes: 30,
+        description: "Squat + deadlift, low volume",
+      },
+    };
+
+    it("uses the block routine and full session count when far from the race", () => {
+      const plan = schedule(makeInput({ config: taperConfig, weeksToRace: 12 }));
+      const weights = plan.filter((w) => w.type === "weights");
+      expect(weights.length).toBe(2);
+      expect(weights.every((w) => w.name === "Strength")).toBe(true);
+      expect(weights.every((w) => w.durationMin === 60)).toBe(true);
+    });
+
+    it("uses the taper routine and one session inside the taper window", () => {
+      const plan = schedule(makeInput({ config: taperConfig, weeksToRace: 3 }));
+      const weights = plan.filter((w) => w.type === "weights");
+      expect(weights.length).toBe(1);
+      expect(weights[0].name).toBe("Taper Lift");
+      expect(weights[0].durationMin).toBe(30);
+    });
+
+    it("places no strength in the final taper week", () => {
+      const plan = schedule(makeInput({ config: taperConfig, weeksToRace: 0 }));
+      expect(plan.filter((w) => w.type === "weights").length).toBe(0);
+    });
+
+    it("falls back to the block routine when no taper variant is defined", () => {
+      const plan = schedule(makeInput({ config: BASE_CONFIG, weeksToRace: 3 }));
+      const weights = plan.filter((w) => w.type === "weights");
+      expect(weights.length).toBe(1);
+      expect(weights[0].name).toBe("Strength");
+      expect(weights[0].durationMin).toBe(60);
+    });
+
+    it("is unchanged when weeksToRace is undefined (backward compat)", () => {
+      const plan = schedule(makeInput({ config: BASE_CONFIG }));
+      expect(plan.filter((w) => w.type === "weights").length).toBe(2);
+    });
+  });
+
   describe("planned-load targets", () => {
     it("attaches TSS, duration, and IF to every non-rest workout", () => {
       const result = schedule(makeInput({ trainingLoad: { ctl: 50, atl: 40, tsb: 10 } }));
