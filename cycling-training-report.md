@@ -1,8 +1,10 @@
 # Evidence-Based Cycling Training for the Flat Century
 
-**Athlete profile:** ~40 yo male, FTP 260 W (~3.4 W/kg), target events ~100 mi / 160 km with ~500 ft / 150 m climbing.
+**Athlete profile:** ~40 yo male, FTP ~243 W at ~77 kg (~3.2 W/kg), VO₂max ~56, target events ~100 mi / 160 km with ~500 ft / 150 m climbing. _(Profile updated 2026-06-10 from Intervals.icu: FTP has settled at 243 W, not the 260 W this report originally assumed — wattage targets below that reference 260 W are ~7% high; recompute against 243 W. CTL ~63 and rising, so volume is healthy.)_
 
 **Method:** Fan-out web research across 6 angles → 29 sources → 131 candidate claims → 25 adversarially verified (3-vote, kill on 2/3 refute). 21 confirmed, 4 refuted. Confidence labels below reflect that verification, not my opinion.
+
+**2026-06-10 update:** Re-reviewed against newer literature and the athlete's actual training logs. Three substantive changes — the strength meta-analysis's own moderator analysis weakens the "age caveat" (§2), intensity-distribution choice is now framed as volume-dependent (§1), and durability now has direct amateur evidence (§2). A new **§7 evaluates the planned vs. actually-executed training** — the headline being that the _plan_ is sound but the _logged strength work is far lighter and less frequent than the plan or the evidence requires_.
 
 ---
 
@@ -23,6 +25,7 @@
 - A 2024 meta-analysis (Sun/Oliveira et al., n≈284–437) found **polarized (POL) superior only for VO₂peak** (SMD = 0.24, p = 0.04), and that edge was bigger in _highly trained_ athletes (SMD = 0.46) and _short_ (<12 wk) blocks. **POL was NOT superior for time-trial performance** (SMD = −0.01, p = 0.92).
 - A 2023 systematic review (7 studies) found **no periodization model favored over 8–12 weeks** in trained cyclists.
 - Cycling naturally tends toward a **pyramidal** distribution (lots of low intensity, a moderate amount of threshold, a little high-intensity). The **80/20 principle** (~80% low-intensity, 5–10% anaerobic) underpins both pyramidal and polarized.
+- **[2026 update — model choice is volume-dependent.]** The 2025–26 wave of reviews (Frontiers 2025, fphys.2025.1657892) converges on a nuance the original report only implied: **polarized pays off mainly at high volume (~12+ h/week); riders under ~8 h/week generally respond better to pyramidal/sweet-spot.** Elites themselves run pyramidal in the base phase and reserve strict polarization for peaking. For a sub-12-h/week recreational rider this _strengthens_ the pyramidal/sweet-spot recommendation below — it's the volume-appropriate default, not a compromise.
 - A 16-week pyramidal program (~57/31/12) in **recreational men, mean age 41** — the closest match to you — raised power at the 4 mmol lactate threshold with large effect sizes (d = 1.21 absolute, d = 1.54 W/kg). _Caveat: single-arm, uncontrolled, n=14 — shows pyramidal works, not that it's superior._
 - A seasonal **pyramidal → polarized sequence** produced the largest gains, but that evidence comes from elite _runners_, not cyclists.
 
@@ -56,7 +59,9 @@
 - Vikmoen et al. 2017: 11 weeks heavy strength improved **post-3-hour cycling performance by 7.0%** and lowered VO₂/HR in the final 2 hours.
 - This is exactly the quality you need at mile 80–100 of a century.
 
-**Important caveat:** these studies used well-trained (and in one case female-only) athletes with mean age ~31, not 40-year-old recreational males. The benefit transfers **by inference**, not by direct demonstration in your exact demographic. Note also: the research **did not** substantiate specific injury-prevention claims — durability/economy are the proven wins.
+**Important caveat — partly relaxed in 2026:** these studies used well-trained (and in one case female-only) athletes with mean age ~31, not 40-year-old recreational males. The benefit still transfers **by inference**, but the inference is now stronger: the 2025 EJAP meta-analysis's own moderator analysis found **no significant moderating effect of participant characteristics — sex, body mass, performance level, or strength-training experience (all p ≥ 0.17)** — i.e., the effect did not shrink in less-trained or heavier athletes. Age was not isolated as a moderator (few older-cohort studies exist), so a residual age caveat remains, but the "this was only shown in young elites" worry is weaker than the original report implied. Note also: the research **did not** substantiate specific injury-prevention claims, and the meta-analysis found **no effect on lactate threshold/MMSS (ES=0.07, p=0.70) or VO₂max (ES=−0.04, p=0.77)** — durability/economy and anaerobic power (ES=0.56) are the proven wins, not threshold or aerobic ceiling.
+
+**[2026 update — durability now shown in amateurs.]** The original durability evidence (Rønnestad, Vikmoen) was in well-trained/elite riders. A 2025 study now shows **enhanced durability — resistance to power-output decline late in long rides — predicts competitive success specifically in _amateur_ road cyclists** (Frontiers Sports & Active Living 2025, PMC12116599), and a 2025 systematic review confirms intensity of prior work is the dominant driver of acute durability loss. This closes part of the demographic gap: the back-half-of-the-century quality the strength block targets is a measurable, trainable trait in riders like you, not just elites.
 
 **Practical takeaway:**
 
@@ -108,7 +113,7 @@
 
 **Pacing (flat, ~500 ft):**
 
-- Target a **steady normalized power well below FTP** — roughly **65–75% of FTP** (low Zone 3 / high Zone 2) for a 5–7 hour ride. At 260 W FTP that's ~170–195 W average.
+- Target a **steady normalized power well below FTP** — roughly **65–75% of FTP** (low Zone 3 / high Zone 2) for a 5–7 hour ride. At 243 W FTP that's ~158–182 W average.
 - **Even/steady pacing** beats variable on flat terrain — surges cost disproportionate glycogen. Resist the temptation to chase wheels early.
 - On flat courses, **drafting is the single biggest free saving** — sitting in a group can cut your power demand 20–30% at the same speed. Group selection > individual heroics.
 
@@ -116,7 +121,7 @@ _(These are flagged as open questions in the research — worth a dedicated evid
 
 ---
 
-## 6. Raising FTP / W/kg from 3.4
+## 6. Raising FTP / W/kg from 3.2
 
 **Confidence: LOWER for specific numbers.** The research only verified general training-_structure_ findings, not concrete FTP-raising prescriptions. Below blends those verified findings with standard coaching practice (flagged).
 
@@ -137,7 +142,38 @@ _(These are flagged as open questions in the research — worth a dedicated evid
 - Everything else **easy Zone 2** to support the 80/20 structure.
 - **Re-test every 6–8 weeks** and adjust zones.
 
-Getting from 3.4 → 4.0 W/kg is realistic over a season for a consistent recreational rider, but it's driven by **volume + structured threshold work + strength + body composition**, all compounding — not any single workout type.
+Getting from 3.2 → 4.0 W/kg is realistic over a season for a consistent recreational rider, but it's driven by **volume + structured threshold work + strength + body composition**, all compounding — not any single workout type.
+
+---
+
+## 7. Does your _actual_ training match the evidence? (2026-06-10 audit)
+
+This is the section the report exists to answer. I compared the planned routine (`config.yaml`), the logged strength work (`strength-workout/strong_workouts.csv`), and the cycling data (Intervals.icu) against §§1–4.
+
+**Verdict in one line: the _plan_ is well-aligned with the evidence; the _executed strength training_ is not — it's too light, too infrequent, and never became the heavy barbell stimulus the plan and the research both call for. Cycling volume is strong, but the intensity distribution is drifting into the grey zone the evidence warns against.**
+
+### Strength training — the biggest gap _[the plan is right; execution isn't]_
+
+- **The plan (`config.yaml`) is correct.** It prescribes exactly what §2 supports: barbell back squat 4×5–6, Romanian/trap-bar deadlift 3×5–6, Bulgarian split squats, 2×/week, heavy and loadable, with a taper that cuts volume not load. No changes needed to the plan.
+- **The execution contradicts it.** The actual log shows:
+  - **No barbell back squat, ever** — the single highest-yield lift in the plan is absent from the record.
+  - The loaded hinge is logged as **"Straight Leg Deadlift (Band)" at 30 lb** — a band, not a loadable barbell. The plan explicitly replaced the band deadlift precisely so load could progress; that swap hasn't happened.
+  - **Bulgarian split squat stalled at 15 lb × 5** for months (a couple of 30 lb × top-set days early on, then back to 15). Calf raise fixed at 30 lb. Rows, push-ups, and face pulls are all band/light-DB.
+  - This is **general conditioning at ~light intensity, not heavy strength training at ~80–85% 1RM.** §2's entire effect — economy + durability — comes from _heavy, high-force, progressively loaded_ lifting. Light band/DB circuits do not deliver it; the 2014 null-result study (§3) is a warning that sub-threshold force work produces no strength or performance gain.
+  - **Frequency is far below prescription:** ~14 sessions from 2026-01-19 to 2026-06-07 (~5 months) with a ~71-day gap — roughly **0.7 sessions/week vs. the 2×/week, 12–14-week continuous block** the evidence requires. There is no identifiable uninterrupted block.
+- **Fix (highest-value change available to you):** run an actual heavy block — barbell back squat and a loadable deadlift (trap-bar/RDL) as the anchors, 3–4 working sets of 5–6 reps at a weight that's genuinely hard, 2×/week, for 12+ uninterrupted weeks, progressing load whenever you hit the top of the rep range. The current routine has the right _exercises listed_ but is being run at an intensity and frequency that the evidence says will not move durability or economy.
+
+### Cycling volume & intensity — volume good, distribution drifting
+
+- **Volume is healthy and consistent.** CTL ~63 and rising (ramp rate positive, mostly +2 to +7/week — within the plan's 7%/week cap), with genuine long rides logged (3.3 h on 5/30, 2.3 h on 6/5, multiple 1.5–2 h rides). For a flat-century build this is the right trajectory and the masters priority of §4 (protect consistency) is being met.
+- **But the intensity distribution is too hard, too often.** Recent rides repeatedly sit at IF 0.78–0.94 (e.g. 0.93 on 5/18, 0.94 on 5/20, 0.93 on 5/22, 0.90 on 6/5, 0.89 on 6/9). That is a lot of moderate-to-hard riding — the **"grey zone" §1 warns against** and that `config.yaml` deliberately tries to prevent with `hard_cycling_days: 1`. The plan's intent (≈80% genuinely easy) is sound; the execution is skewing harder than 80/20. **Fix:** make the easy days genuinely easy (the planner's 0.62 easy-IF target ≈ 150 W at 243 W FTP — ride _that_, not 0.8+), and keep true quality to the one sweet-spot day plus at most one hard ride.
+- **Re-baseline your targets to 243 W FTP.** Every wattage in this report and the sweet-spot session was written against 260 W and is now ~7% high. Sweet-spot at 88–94% of 243 W is ~214–228 W (the config still says ~230–244 W). Recompute zones, or re-test FTP and reset — §6's "re-test every 6–8 weeks" applies now.
+
+### What's already right — keep doing it
+
+- Dropping moderate low-cadence grinding (§3): the plan correctly replaced it with sweet-spot. ✓
+- Pyramidal/sweet-spot lean for a sub-12-h/week rider (§1, 2026 volume-dependence update): correct default. ✓
+- Long endurance ride as the weekly durability anchor, taper that cuts frequency not load (§2): correctly specified. ✓
 
 ---
 
@@ -153,6 +189,8 @@ Getting from 3.4 → 4.0 W/kg is realistic over a season for a consistent recrea
 
 For _you_ specifically: **(1)** ride a lot, mostly easy, pyramidal structure; **(2)** add a heavy 12-week strength block — it's your biggest durability win for the back half of a century; **(3)** drop moderate big-gear intervals; **(4)** guard your consistency above all as a masters athlete; **(5)** rehearse fueling (~60–90 g carbs/hr) and steady sub-threshold pacing in training; **(6)** sweet-spot/threshold blocks plus body composition move W/kg.
 
+**And the 2026-06-10 reality check (§7):** your _plan_ already says all of this — but your _logged strength work is light band/DB conditioning done ~0.7×/week, not the heavy barbell block 2×/week that the plan and the evidence both call for_, and your easy rides are drifting too hard. The single highest-value change isn't more research — it's actually executing the heavy strength block that's already written down, and recomputing your targets against your real 243 W FTP.
+
 ---
 
 ### Sources (peer-reviewed primary, in priority order)
@@ -167,3 +205,13 @@ For _you_ specifically: **(1)** ride a lot, mostly easy, pyramidal structure; **
 - Vikmoen et al. 2017 (strength durability) — PubMed 19903319
 - Frontiers 2014 (low-cadence null RCT, veteran cyclists) — fphys.2014.00034
 - Valenzuela et al. 2022 (masters volume vs VO₂max) — mdpi.com/1660-4601/19/17/11050
+
+**Re-reviewed with full text 2026-06-10** (already in the primary list above; full DOIs and added detail):
+
+- Llanos-Lagos et al. 2025 EJAP strength meta-analysis (= "2025 EJAP strength meta-analysis", PMC12881108 above) — full text confirms ES/p-values cited in §2 and the no-moderation-by-participant-characteristics finding — doi 10.1007/s00421-025-05883-2
+- Frontiers Physiology 2025 intensity-distribution review (= "Frontiers 2025", fphys.2025.1657892 above) — volume-dependent model choice — PMC12568352
+
+**Added 2026-06-10** (new citations):
+
+- Frontiers Sports & Active Living 2025, "Enhanced durability predicts success in amateur road cycling" — PMC12116599
+- 2025 EJAP systematic review, intensity as the driver of acute durability loss — doi 10.1007/s00421-025-05885-0
