@@ -877,9 +877,10 @@ describe("classifyExistingEvent", () => {
   });
 
   it("falls back to planned IF for arbitrary names", () => {
-    expect(classifyExistingEvent(ev({ name: "Iron Lung", icu_intensity: 0.88 }))).toBe(
+    expect(classifyExistingEvent(ev({ name: "Iron Lung", icu_intensity: 0.98 }))).toBe(
       "hard_cycling",
     );
+    expect(classifyExistingEvent(ev({ name: "SS 2x20", icu_intensity: 0.88 }))).toBe("sweet_spot");
     expect(classifyExistingEvent(ev({ name: "Coffee Spin", icu_intensity: 0.6 }))).toBe("easy");
   });
 
