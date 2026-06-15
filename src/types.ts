@@ -76,6 +76,7 @@ export interface WellnessEntry extends TrainingLoad {
 export interface Activity {
   id: string;
   start_date_local: string; // ISO timestamp from the API; we don't trim it
+  start_date: string; // UTC ISO timestamp ("...Z"); used to match against external logs (e.g. Hevy) without timezone guesswork
   type: string; // "Ride", "VirtualRide", "Run", etc.
   icu_training_load: number; // TSS
   icu_intensity: number | null; // IF as a fraction, e.g. 0.89 (the API returns a percentage; normalized on read)

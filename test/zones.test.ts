@@ -13,6 +13,7 @@ function ride(overrides: Partial<Activity> = {}): Activity {
   return {
     id: "i1",
     start_date_local: "2026-04-01T08:00:00",
+    start_date: "2026-04-01T12:00:00Z",
     type: "Ride",
     icu_training_load: 50,
     icu_intensity: 0.7,

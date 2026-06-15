@@ -147,6 +147,7 @@ export class IntervalsClient {
       return {
         id: typeof a.id === "string" ? a.id : String(a.id ?? ""),
         start_date_local: typeof a.start_date_local === "string" ? a.start_date_local : "",
+        start_date: typeof a.start_date === "string" ? a.start_date : "",
         type: typeof a.type === "string" ? a.type : "",
         icu_training_load: typeof a.icu_training_load === "number" ? a.icu_training_load : 0,
         icu_intensity: normalizeIntensity(a.icu_intensity),
@@ -180,6 +181,34 @@ export class IntervalsClient {
       throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
     }
     return res.json();
+  }
+
+  // Activities (completed workouts) are separate from events (planned). Strong
+  // strength sessions arrive here via the Intervals.icu Companion Apple Health
+  // sync as WeightTraining activities with an empty description.
+  async getActivityDescription(id: string): Promise<string> {
+    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/activities/${id}`;
+    const res = await this.fetch(url, { headers: this.headers });
+    if (!res.ok) {
+      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
+    }
+    const data = await res.json();
+    const desc = (data as Record<string, unknown> | null)?.description;
+    return typeof desc === "string" ? desc : "";
+  }
+
+  async updateActivity(id: string, fields: Record<string, unknown>): Promise<void> {
+    // Single-activity writes use the non-athlete-scoped /activity/{id} path;
+    // the /athlete/{id}/activities/... path only supports GET (PUT → 405).
+    const url = `${BASE_URL}/activity/${id}`;
+    const res = await this.fetch(url, {
+      method: "PUT",
+      headers: this.headers,
+      body: JSON.stringify(fields),
+    });
+    if (!res.ok) {
+      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
+    }
   }
 
   async deleteEvent(id: number): Promise<void> {

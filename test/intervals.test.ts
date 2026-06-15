@@ -160,6 +160,7 @@ describe("IntervalsClient", () => {
           {
             id: "i12345",
             start_date_local: "2026-04-19T08:00:00",
+            start_date: "2026-04-19T12:00:00Z",
             type: "Ride",
             icu_training_load: 78,
             icu_intensity: 0.82,
@@ -185,6 +186,7 @@ describe("IntervalsClient", () => {
       expect(activities[0]).toEqual({
         id: "i12345",
         start_date_local: "2026-04-19T08:00:00",
+        start_date: "2026-04-19T12:00:00Z",
         type: "Ride",
         icu_training_load: 78,
         icu_intensity: 0.82,
@@ -194,6 +196,7 @@ describe("IntervalsClient", () => {
       expect(activities[1].icu_intensity).toBeNull();
       expect(activities[1].icu_zone_times).toBeNull();
       expect(activities[1].icu_ss_time).toBeNull();
+      expect(activities[1].start_date).toBe(""); // missing start_date → "" (used by the Hevy matcher)
     });
 
     it("normalizes the live API shape: percent IF and object-array zone times", async () => {
@@ -236,6 +239,71 @@ describe("IntervalsClient", () => {
       });
       const activities = await client.getActivities("2026-04-19", "2026-04-20");
       expect(activities).toEqual([]);
+    });
+  });
+
+  describe("getActivityDescription", () => {
+    it("fetches the activity and returns its description", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: "i999", description: "— logged from Strong —\nSquat: 6@90lb" }),
+      });
+
+      const desc = await client.getActivityDescription("i999");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://intervals.icu/api/v1/athlete/0/activities/i999",
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: expect.stringContaining("Basic") }),
+        }),
+      );
+      expect(desc).toBe("— logged from Strong —\nSquat: 6@90lb");
+    });
+
+    it("returns '' when the activity has no (or a non-string) description", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: "i999" }) });
+      expect(await client.getActivityDescription("i999")).toBe("");
+
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ description: null }) });
+      expect(await client.getActivityDescription("i999")).toBe("");
+    });
+
+    it("throws on non-ok response", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 404, text: async () => "Not Found" });
+      await expect(client.getActivityDescription("i999")).rejects.toThrow(
+        "Intervals.icu API error (404)",
+      );
+    });
+  });
+
+  describe("updateActivity", () => {
+    it("PUTs to the /activity/{id} endpoint (not /athlete/0/activities/{id})", async () => {
+      // Regression guard: single-activity writes must use /activity/{id}; the
+      // athlete-scoped path is GET-only and returns 405 on PUT.
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+      await client.updateActivity("i999", { description: "new" });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://intervals.icu/api/v1/activity/i999",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ description: "new" }),
+        }),
+      );
+      const calledUrl = mockFetch.mock.calls[0][0];
+      expect(calledUrl).not.toContain("/athlete/");
+    });
+
+    it("throws on non-ok response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 405,
+        text: async () => "Method Not Allowed",
+      });
+      await expect(client.updateActivity("i999", { description: "x" })).rejects.toThrow(
+        "Intervals.icu API error (405)",
+      );
     });
   });
 
