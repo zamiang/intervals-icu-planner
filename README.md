@@ -18,11 +18,12 @@ Requires Node.js 20+.
 
 Credentials live in `.env`:
 
-| Variable            | What it is                                   |
-| ------------------- | -------------------------------------------- |
-| `INTERVALS_API_KEY` | Intervals.icu API key (Settings → API)       |
-| `XERT_USERNAME`     | Xert account email                           |
-| `XERT_PASSWORD`     | Xert account password (OAuth password grant) |
+| Variable            | What it is                                                              |
+| ------------------- | ----------------------------------------------------------------------- |
+| `INTERVALS_API_KEY` | Intervals.icu API key (Settings → API)                                  |
+| `XERT_USERNAME`     | Xert account email                                                      |
+| `XERT_PASSWORD`     | Xert account password (OAuth password grant)                            |
+| `HEVY_API_KEY`      | Hevy Pro API key, for strength logging (Settings → Developer); optional |
 
 Workout definitions and scheduling rules live in `config.yaml`:
 
@@ -79,6 +80,28 @@ The plan file anchors to the upcoming Monday by default; each session names a
 `name`/`type`/`description`. Days that already hold an event are skipped, so
 re-running never duplicates.
 
+### Strength logging
+
+Intervals.icu has no structured per-set fields, so strength lift detail
+(exercises, sets, reps, weights/bands, RPE) is written into the **description**
+of the Companion-synced `WeightTraining` activity. Two importers normalize their
+input through `src/strength.ts` so they produce byte-identical descriptions; the
+description begins with a marker line that makes re-runs idempotent (a re-run
+overwrites its own output but leaves hand-written descriptions alone unless
+`--force`d).
+
+```sh
+npm run push-strength:hevy                  # dry run, recent Hevy workouts
+npm run push-strength:hevy -- --apply       # write descriptions
+npm run push-strength:hevy -- --since 2026-06-01
+npm run push-strength                        # Strong CSV importer (historical backfill)
+```
+
+`push-strength:hevy` pulls live from the Hevy API (needs `HEVY_API_KEY`) and
+matches workouts to activities by **UTC start time** within a tolerance window,
+so there's no timezone guesswork and no manual export. `push-strength` reads a
+Strong CSV export and matches by start timestamp — used for one-off backfill.
+
 ## How the schedule is built
 
 For each 7-day window, starting from today:
@@ -93,7 +116,7 @@ For each 7-day window, starting from today:
    interval rides (placed only when TSB is fresh and the ramp guard is off);
    every other day fills as easy Zone 2. This holds the ~80/20 low-intensity
    majority the training-science evidence calls for — the planner never
-   schedules "moderate" grey-zone fills. See `cycling-training-report.md`.
+   schedules "moderate" grey-zone fills. See `docs/cycling-training-report.md`.
 
 Weight and sweet-spot days are always classified as "hard" for the
 back-to-back constraint.
@@ -128,3 +151,9 @@ npm run format      # prettier --write
 
 CI (`.github/workflows/ci.yml`) runs format check, lint, typecheck, and tests
 on push and PR to `main`.
+
+## Docs
+
+- [`docs/cycling-training-report.md`](docs/cycling-training-report.md) — the
+  training-science rationale behind the planner's 80/20 polarization, zone
+  targeting, and strength prescription, with citations.
