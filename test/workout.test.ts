@@ -3,20 +3,20 @@ import { easyEnduranceWorkout, sweetSpotWorkout, structuredWorkoutFor } from "..
 import type { PlannedWorkout } from "../src/types.js";
 
 describe("easyEnduranceWorkout", () => {
-  it("targets HR zone 2 so Intervals.icu derives bpm from stored HR zones", () => {
+  it("writes the power target ahead of the HR zone, in the order the parser expects", () => {
     const w = easyEnduranceWorkout(75, 62);
-    expect(w.text).toContain("Z2 HR");
-    // A single steady step whose duration matches the requested minutes.
+    // An HR-only step leaves normalized_power at 0 (broken planned load); the
+    // power target fixes it, and `% Z2 HR` is the order Intervals.icu parses.
+    expect(w.text).toContain("62% Z2 HR");
     expect(w.text.trim().startsWith("- 75m")).toBe(true);
     expect(w.minutes).toBe(75);
   });
 
-  it("also carries a power target so Intervals.icu can compute planned load", () => {
-    // An HR-only step leaves normalized_power at 0, so the planned TSS/CTL is
-    // broken; the explicit power target (the planned IF as % FTP) fixes it.
-    const w = easyEnduranceWorkout(180, 62);
-    expect(w.text).toContain("62%");
-    expect(w.minutes).toBe(180);
+  it("reports an intensityFactor matching the whole-percent power target", () => {
+    // The step text rounds to a whole percent; intensityFactor must mirror that
+    // rounding so a caller's submitted TSS matches the step Intervals.icu reads.
+    expect(easyEnduranceWorkout(180, 62).intensityFactor).toBe(0.62);
+    expect(easyEnduranceWorkout(75, 63).intensityFactor).toBe(0.63);
   });
 });
 
@@ -60,8 +60,7 @@ describe("structuredWorkoutFor", () => {
     const s = structuredWorkoutFor(
       planned({ intensity: "easy", durationMin: 90, intensityFactor: 0.62 }),
     );
-    expect(s?.text).toContain("Z2 HR"); // HR-zone target for display
-    expect(s?.text).toContain("62%"); // power target so load computes
+    expect(s?.text).toContain("62% Z2 HR"); // power target (load) + HR-zone target (display)
     expect(s?.minutes).toBe(90);
   });
 

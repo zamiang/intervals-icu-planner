@@ -8,12 +8,21 @@ import type { PlannedWorkout } from "./types.js";
 // descriptions are shown verbatim and yield no targets, which is why the prose
 // descriptions we used before never surfaced power or HR on the calendar.
 //
-// A step targets one primary metric (power *or* HR), so we pace the quality work
-// by power (sweet spot) and the aerobic base by heart rate (easy/long Z2) — each
-// derived from the athlete's own stored zones.
+// Steps pace the quality work by power (sweet spot) and the aerobic base by
+// heart rate (easy/long Z2). Crucially, the endurance steps carry BOTH a power
+// target and an HR-zone target: Intervals.icu cannot estimate power for an
+// HR-only planned step (normalized_power stays 0), so it can't forecast load —
+// the power target gives it something to compute from while the HR zone is what
+// the athlete actually paces to. All targets derive from the athlete's own
+// stored zones.
 export interface StructuredWorkout {
   text: string; // plain-text workout for the event description
   minutes: number; // total step duration, so callers can keep planned load consistent
+  // The effective IF the steps encode, when the workout is a single steady
+  // effort (e.g. endurance). Callers compute planned load from this so the
+  // submitted TSS matches the integer power % actually written into the step.
+  // Omitted for mixed workouts (e.g. sweet spot) whose IF varies across steps.
+  intensityFactor?: number;
 }
 
 // A steady Zone 2 endurance ride carrying BOTH a power target and an HR-zone
@@ -21,11 +30,13 @@ export interface StructuredWorkout {
 // planned load/CTL — an HR-only step leaves normalized_power at 0, so it can't
 // forecast TSS and falls back to a broken ~33% estimate. `Z2 HR` then pins the
 // heart-rate target so the athlete still sees the stored-zone bpm band. The
-// power target is set to the planned IF so the computed load matches the plan.
+// power target is the planned IF rounded to a whole percent; the returned
+// intensityFactor mirrors that rounding so the submitted TSS matches the step.
 export function easyEnduranceWorkout(minutes: number, ftpPct: number): StructuredWorkout {
   return {
     text: `- ${minutes}m ${ftpPct}% Z2 HR Steady Zone 2 endurance`,
     minutes,
+    intensityFactor: ftpPct / 100,
   };
 }
 

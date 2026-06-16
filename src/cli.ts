@@ -152,15 +152,19 @@ export function workoutToEvent(w: PlannedWorkout): IntervalsEvent {
   // Planned-load targets: shown on the calendar and folded into planned CTL/ATL.
   // A structured workout's step durations are the source of truth for its
   // duration; recompute moving_time (and TSS from IF) so the three stay
-  // consistent with what the athlete will actually ride.
+  // consistent with what the athlete will actually ride. For a single-effort
+  // structured workout we use the IF the steps actually encode (rounded to the
+  // whole percent written into the step), so the submitted TSS matches what
+  // Intervals.icu re-computes from the step power rather than the raw plan IF.
   const durationMin = structured ? structured.minutes : w.durationMin;
+  const effectiveIf = structured?.intensityFactor ?? w.intensityFactor;
   if (typeof durationMin === "number") event.moving_time = Math.round(durationMin * 60);
-  if (structured && typeof durationMin === "number" && typeof w.intensityFactor === "number") {
-    event.icu_training_load = Math.round((durationMin / 60) * w.intensityFactor ** 2 * 100);
+  if (structured && typeof durationMin === "number" && typeof effectiveIf === "number") {
+    event.icu_training_load = Math.round((durationMin / 60) * effectiveIf ** 2 * 100);
   } else if (typeof w.load === "number") {
     event.icu_training_load = w.load;
   }
-  if (typeof w.intensityFactor === "number") event.icu_intensity = w.intensityFactor;
+  if (typeof effectiveIf === "number") event.icu_intensity = effectiveIf;
   return event;
 }
 

@@ -265,11 +265,27 @@ describe("workoutToEvent", () => {
       durationMin: 75,
       intensityFactor: 0.62,
     });
-    expect(event.description).toContain("Z2 HR"); // HR-zone target for display
-    expect(event.description).toContain("62%"); // power target so Intervals.icu computes load
+    expect(event.description).toContain("62% Z2 HR"); // power target (load) + HR zone (display)
     expect(event.moving_time).toBe(75 * 60);
     // TSS is recomputed from the structured duration (here unchanged at 75 min).
     expect(event.icu_training_load).toBe(Math.round((75 / 60) * 0.62 ** 2 * 100));
+  });
+
+  it("matches submitted TSS/intensity to the rounded step percent, not the raw IF", () => {
+    // A non-round IF rounds to 63% in the step text; the submitted TSS and IF
+    // must follow that rounding so they agree with what Intervals.icu re-derives.
+    const event = workoutToEvent({
+      date: "2026-04-20",
+      type: "cycling",
+      name: "Easy Ride",
+      description: "prose",
+      intensity: "easy",
+      durationMin: 75,
+      intensityFactor: 0.625,
+    });
+    expect(event.description).toContain("63% Z2 HR");
+    expect(event.icu_intensity).toBe(0.63);
+    expect(event.icu_training_load).toBe(Math.round((75 / 60) * 0.63 ** 2 * 100));
   });
 
   it("leaves hard Xert rides as prose (no deterministic structure)", () => {
