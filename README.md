@@ -133,6 +133,25 @@ threshold, VO2, or anaerobic — chosen to fill the largest gap between the
 last 28 days of TSS-weighted zone distribution and a hardcoded baseline.
 Two hard rides in a week are guaranteed to target different zones.
 
+### Structured workouts (target power & heart rate)
+
+Rides with a deterministic structure are pushed as **Intervals.icu plain-text
+workouts** rather than prose, so Intervals.icu renders per-interval targets and
+shows them in the calendar and the Companion app:
+
+- **Sweet-spot sessions** are written as power steps (`88-94%`), so Intervals.icu
+  computes **target watts** from your stored FTP.
+- **Easy and long endurance rides** are written as a heart-rate step (`Z2 HR`),
+  so Intervals.icu computes the **target bpm** band from your stored HR zones.
+
+A step targets one primary metric, so quality work is paced by power and the
+aerobic base by heart rate — each derived from your own stored zones. Hard Xert
+workout-of-the-day rides (no fixed structure) and weight sessions (no power/HR
+model) keep their prose descriptions. The full coaching rationale for the
+sweet-spot session lives in `config.yaml` and `docs/`; the calendar event
+carries the executable structure plus short per-step labels. The builder lives
+in `src/workout.ts`.
+
 ### Ramp guard
 
 If the trailing 7-day CTL ramp exceeds `max_weekly_ramp_pct`, hard cycling

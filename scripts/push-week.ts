@@ -19,6 +19,7 @@ import { parse } from "yaml";
 import { toLocalISODate } from "../src/dates.js";
 import { loadConfig } from "../src/config.js";
 import { IntervalsClient } from "../src/intervals.js";
+import { sweetSpotWorkout } from "../src/workout.js";
 import type { Config, IntervalsEvent } from "../src/types.js";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -71,19 +72,27 @@ function withPlannedLoad(event: IntervalsEvent, s: PlanSession): IntervalsEvent 
   return event;
 }
 
-function sessionToEvent(s: PlanSession, date: string, config: Config): IntervalsEvent {
+export function sessionToEvent(s: PlanSession, date: string, config: Config): IntervalsEvent {
   if (s.workout) {
     const def = config[s.workout];
-    return withPlannedLoad(
+    // The sweet-spot session has a fixed interval structure, so write it as an
+    // Intervals.icu plain-text workout (target watts from FTP) rather than prose.
+    const structured = s.workout === "sweet_spot" ? sweetSpotWorkout() : null;
+    const event = withPlannedLoad(
       {
         start_date_local: `${date}T00:00:00`,
         name: def.name,
         category: "WORKOUT",
         type: s.workout === "weight_training" ? "WeightTraining" : "Ride",
-        description: def.description,
+        description: structured ? structured.text : def.description,
       },
       s,
     );
+    // Duration follows the structured steps unless the session names its own.
+    if (structured && s.minutes === undefined) {
+      event.moving_time = Math.round(structured.minutes * 60);
+    }
+    return event;
   }
   if (!s.name || !s.type) {
     throw new Error(`Session on ${date} needs either a 'workout' or both 'name' and 'type'`);
