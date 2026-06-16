@@ -19,6 +19,7 @@ import { parse } from "yaml";
 import { toLocalISODate } from "../src/dates.js";
 import { loadConfig } from "../src/config.js";
 import { IntervalsClient } from "../src/intervals.js";
+import { sweetSpotWorkout } from "../src/workout.js";
 import type { Config, IntervalsEvent } from "../src/types.js";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -71,19 +72,35 @@ function withPlannedLoad(event: IntervalsEvent, s: PlanSession): IntervalsEvent 
   return event;
 }
 
-function sessionToEvent(s: PlanSession, date: string, config: Config): IntervalsEvent {
+export function sessionToEvent(s: PlanSession, date: string, config: Config): IntervalsEvent {
   if (s.workout) {
     const def = config[s.workout];
-    return withPlannedLoad(
+    // The sweet-spot session has a fixed interval structure, so write it as an
+    // Intervals.icu plain-text workout (target watts from FTP) rather than prose.
+    const structured = s.workout === "sweet_spot" ? sweetSpotWorkout() : null;
+    const event = withPlannedLoad(
       {
         start_date_local: `${date}T00:00:00`,
         name: def.name,
         category: "WORKOUT",
         type: s.workout === "weight_training" ? "WeightTraining" : "Ride",
-        description: def.description,
+        description: structured ? structured.text : def.description,
       },
       s,
     );
+    // Duration follows the structured steps unless the session names its own.
+    // The steps are then the source of truth, so recompute TSS from the
+    // structured duration + IF (mirrors the cli.ts plan path) — otherwise a YAML
+    // `load:` computed for the config duration would be stamped against the
+    // longer structured duration. With no IF in the YAML we can't recompute, so
+    // the explicit `load:` is left as a best effort.
+    if (structured && s.minutes === undefined) {
+      event.moving_time = Math.round(structured.minutes * 60);
+      if (typeof s.intensity === "number") {
+        event.icu_training_load = Math.round((structured.minutes / 60) * s.intensity ** 2 * 100);
+      }
+    }
+    return event;
   }
   if (!s.name || !s.type) {
     throw new Error(`Session on ${date} needs either a 'workout' or both 'name' and 'type'`);

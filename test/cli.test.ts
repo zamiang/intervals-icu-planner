@@ -233,6 +233,56 @@ describe("workoutToEvent", () => {
     expect(event.moving_time).toBeUndefined();
     expect(event.icu_intensity).toBeUndefined();
   });
+
+  it("emits a power-targeted structured workout for the sweet-spot session", () => {
+    const event = workoutToEvent({
+      date: "2026-04-22",
+      type: "sweet_spot",
+      name: "Sweet Spot Intervals",
+      description: "long prose rationale",
+      intensity: "hard",
+      load: 77,
+      durationMin: 60,
+      intensityFactor: 0.88,
+    });
+    // Structured steps replace the prose so Intervals.icu derives target watts.
+    expect(event.description).toContain("88-94%");
+    expect(event.description).not.toContain("long prose rationale");
+    // Duration and load follow the structured steps (72 min), not the config 60.
+    expect(event.moving_time).toBe(72 * 60);
+    expect(event.icu_training_load).toBe(Math.round((72 / 60) * 0.88 ** 2 * 100));
+    expect(event.icu_intensity).toBe(0.88);
+  });
+
+  it("emits an HR-targeted structured workout for an easy ride", () => {
+    const event = workoutToEvent({
+      date: "2026-04-20",
+      type: "cycling",
+      name: "Easy Ride",
+      description: "Easy ride — Zone 2 recovery spin",
+      intensity: "easy",
+      load: 48,
+      durationMin: 75,
+      intensityFactor: 0.62,
+    });
+    expect(event.description).toContain("Z2 HR");
+    expect(event.moving_time).toBe(75 * 60);
+    // TSS is recomputed from the structured duration (here unchanged at 75 min).
+    expect(event.icu_training_load).toBe(Math.round((75 / 60) * 0.62 ** 2 * 100));
+  });
+
+  it("leaves hard Xert rides as prose (no deterministic structure)", () => {
+    const event = workoutToEvent({
+      date: "2026-04-20",
+      type: "cycling",
+      name: "VO2 Max Intervals",
+      description: "Xert workout of the day",
+      intensity: "hard",
+      durationMin: 75,
+      intensityFactor: 0.88,
+    });
+    expect(event.description).toBe("Xert workout of the day");
+  });
 });
 
 describe("resolveRaceDate", () => {

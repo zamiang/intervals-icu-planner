@@ -6,6 +6,7 @@ import { XertClient } from "./xert.js";
 import { schedule, classifyFatigue, rampGuardTriggered } from "./scheduler.js";
 import { todayLocal, addLocalDays } from "./dates.js";
 import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zones.js";
+import { structuredWorkoutFor } from "./workout.js";
 import type {
   PlannedWorkout,
   IntervalsEvent,
@@ -135,6 +136,10 @@ const WORKOUT_TYPE_TO_EVENT_TYPE: Record<WorkoutType, string> = {
 };
 
 export function workoutToEvent(w: PlannedWorkout): IntervalsEvent {
+  // When the workout has a deterministic structure, write it as an Intervals.icu
+  // plain-text workout so the calendar shows target power (from FTP) / HR (from
+  // stored HR zones); otherwise fall back to the prose description.
+  const structured = structuredWorkoutFor(w);
   const event: IntervalsEvent = {
     // Intervals.icu's event API rejects a bare YYYY-MM-DD with a 422
     // ("could not be parsed at index 10") — it needs a time component.
@@ -142,11 +147,19 @@ export function workoutToEvent(w: PlannedWorkout): IntervalsEvent {
     name: w.name,
     category: w.type === "rest" ? "NOTE" : "WORKOUT",
     type: WORKOUT_TYPE_TO_EVENT_TYPE[w.type],
-    description: w.description,
+    description: structured ? structured.text : w.description,
   };
   // Planned-load targets: shown on the calendar and folded into planned CTL/ATL.
-  if (typeof w.load === "number") event.icu_training_load = w.load;
-  if (typeof w.durationMin === "number") event.moving_time = Math.round(w.durationMin * 60);
+  // A structured workout's step durations are the source of truth for its
+  // duration; recompute moving_time (and TSS from IF) so the three stay
+  // consistent with what the athlete will actually ride.
+  const durationMin = structured ? structured.minutes : w.durationMin;
+  if (typeof durationMin === "number") event.moving_time = Math.round(durationMin * 60);
+  if (structured && typeof durationMin === "number" && typeof w.intensityFactor === "number") {
+    event.icu_training_load = Math.round((durationMin / 60) * w.intensityFactor ** 2 * 100);
+  } else if (typeof w.load === "number") {
+    event.icu_training_load = w.load;
+  }
   if (typeof w.intensityFactor === "number") event.icu_intensity = w.intensityFactor;
   return event;
 }
