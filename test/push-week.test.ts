@@ -77,6 +77,30 @@ describe("sessionToEvent", () => {
     expect(event.moving_time).toBe(72 * 60);
   });
 
+  it("recomputes TSS from the structured duration when the session gives an IF", () => {
+    // YAML `load: 77` was computed for the 60-min config value; with a structured
+    // 72-min workout the steps win, so TSS is recomputed from IF, not left at 77.
+    const event = sessionToEvent(
+      { day: "Wed", workout: "sweet_spot", load: 77, intensity: 0.88 },
+      "2026-06-10",
+      config,
+    );
+    expect(event.moving_time).toBe(72 * 60);
+    expect(event.icu_training_load).toBe(Math.round((72 / 60) * 0.88 ** 2 * 100));
+  });
+
+  it("leaves an explicit load as a best effort when no IF is supplied", () => {
+    // No IF to recompute from, so the YAML load is kept even though the
+    // structured duration differs — documented best-effort behavior.
+    const event = sessionToEvent(
+      { day: "Wed", workout: "sweet_spot", load: 77 },
+      "2026-06-10",
+      config,
+    );
+    expect(event.moving_time).toBe(72 * 60);
+    expect(event.icu_training_load).toBe(77);
+  });
+
   it("keeps explicit session minutes when supplied", () => {
     const event = sessionToEvent(
       { day: "Wed", workout: "sweet_spot", minutes: 65 },

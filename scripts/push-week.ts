@@ -89,8 +89,16 @@ export function sessionToEvent(s: PlanSession, date: string, config: Config): In
       s,
     );
     // Duration follows the structured steps unless the session names its own.
+    // The steps are then the source of truth, so recompute TSS from the
+    // structured duration + IF (mirrors the cli.ts plan path) — otherwise a YAML
+    // `load:` computed for the config duration would be stamped against the
+    // longer structured duration. With no IF in the YAML we can't recompute, so
+    // the explicit `load:` is left as a best effort.
     if (structured && s.minutes === undefined) {
       event.moving_time = Math.round(structured.minutes * 60);
+      if (typeof s.intensity === "number") {
+        event.icu_training_load = Math.round((structured.minutes / 60) * s.intensity ** 2 * 100);
+      }
     }
     return event;
   }

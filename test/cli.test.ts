@@ -267,6 +267,8 @@ describe("workoutToEvent", () => {
     });
     expect(event.description).toContain("Z2 HR");
     expect(event.moving_time).toBe(75 * 60);
+    // TSS is recomputed from the structured duration (here unchanged at 75 min).
+    expect(event.icu_training_load).toBe(Math.round((75 / 60) * 0.62 ** 2 * 100));
   });
 
   it("leaves hard Xert rides as prose (no deterministic structure)", () => {

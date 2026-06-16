@@ -68,6 +68,10 @@ describe("structuredWorkoutFor", () => {
     expect(structuredWorkoutFor(planned({ intensity: "hard", durationMin: 75 }))).toBeNull();
   });
 
+  it("returns null for moderate-intensity rides (only easy rides get an HR workout)", () => {
+    expect(structuredWorkoutFor(planned({ intensity: "moderate", durationMin: 75 }))).toBeNull();
+  });
+
   it("returns null for weights and rest", () => {
     expect(structuredWorkoutFor(planned({ type: "weights", intensity: "hard" }))).toBeNull();
     expect(structuredWorkoutFor(planned({ type: "rest" }))).toBeNull();
