@@ -188,12 +188,13 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // A long endurance ride already on this week's calendar must suppress the
   // promotion below — otherwise the planner promotes a second easy ride to a
   // long ride and the week ends up with two. classifyExistingEvent folds "long"
-  // into the "easy" bucket, so match the name directly here.
+  // into the "easy" bucket, so match the name directly here. Word-boundary
+  // anchors avoid false positives like "Prolonged Effort" or "Longmont Crit".
   let hasExistingLongRide = false;
   for (const e of existingEvents) {
     const idx = dayDiff(startDate, dayKey(e.start_date_local));
     if (idx >= days) continue;
-    if (idx >= 0 && /long/i.test(e.name)) hasExistingLongRide = true;
+    if (idx >= 0 && /\blong\b/i.test(e.name)) hasExistingLongRide = true;
     const kind = classifyExistingEvent(e);
     if (kind === "easy" || kind === "other") continue;
     existingHardDays.add(idx);
