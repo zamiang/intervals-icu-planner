@@ -248,10 +248,11 @@ async function main() {
     const lookbackStr = addLocalDays(today, -28);
     const weekAgoStr = addLocalDays(today, -7);
 
-    const [info, activities, wellnessRange] = await Promise.all([
+    const [info, activities, wellnessRange, ftp] = await Promise.all([
       xert.getTrainingInfo(),
       intervals.getActivities(lookbackStr, today),
       intervals.getTrainingLoadRange(weekAgoStr, today),
+      intervals.getFtp(),
     ]);
     const load = latestTrainingLoad(wellnessRange);
     const distribution = computeDistribution(activities);
@@ -263,6 +264,7 @@ async function main() {
       );
       const out = {
         training_load: load,
+        ftp,
         xert: info,
         zones: { distribution, targets: POLARIZED_TARGETS, deficits },
         ramp: {
@@ -280,7 +282,7 @@ async function main() {
     console.log(`ATL (Fatigue):  ${load.atl}`);
     console.log(`TSB (Form):     ${load.tsb}`);
     console.log();
-    console.log(`FTP:    ${info.ftp}W`);
+    console.log(`FTP:    ${ftp !== null ? `${ftp}W` : "not set"}  (Intervals.icu)`);
     console.log(`LTP:    ${info.ltp}W`);
     console.log(`HIE:    ${info.hie} kJ`);
     console.log(`PP:     ${info.pp}W`);

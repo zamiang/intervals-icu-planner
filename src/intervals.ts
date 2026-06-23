@@ -134,6 +134,30 @@ export class IntervalsClient {
     return { ctl, atl, tsb };
   }
 
+  // Current cycling FTP from the athlete's Intervals.icu sport settings. The
+  // endpoint returns one settings object per sport group; we read the one whose
+  // `types` includes "Ride". This is the FTP that actually paces the structured
+  // `% FTP` workouts (Intervals.icu resolves them against this value), so it's
+  // the authoritative source for what the athlete will ride. Returns null when
+  // no Ride FTP is set (e.g. a run/swim-only athlete or unconfigured account).
+  async getFtp(): Promise<number | null> {
+    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/sport-settings`;
+    const res = await this.fetch(url, { headers: this.headers });
+    if (!res.ok) {
+      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
+    }
+    const data = await res.json();
+    if (!Array.isArray(data)) return null;
+    const ride = data.find(
+      (s) =>
+        s &&
+        typeof s === "object" &&
+        Array.isArray((s as Record<string, unknown>).types) &&
+        ((s as Record<string, unknown>).types as unknown[]).includes("Ride"),
+    ) as Record<string, unknown> | undefined;
+    return ride && typeof ride.ftp === "number" ? ride.ftp : null;
+  }
+
   async getActivities(oldest: string, newest: string): Promise<Activity[]> {
     const url = `${BASE_URL}/athlete/${ATHLETE_ID}/activities?oldest=${oldest}&newest=${newest}`;
     const res = await this.fetch(url, { headers: this.headers });

@@ -152,6 +152,48 @@ describe("IntervalsClient", () => {
     });
   });
 
+  describe("getFtp", () => {
+    it("returns the FTP from the sport-settings entry whose types include Ride", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { id: 1, types: ["Run", "TrailRun"], ftp: null, lthr: 163 },
+          { id: 2, types: ["Ride", "VirtualRide"], ftp: 235, lthr: 160 },
+        ],
+      });
+
+      const ftp = await client.getFtp();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://intervals.icu/api/v1/athlete/0/sport-settings",
+        expect.any(Object),
+      );
+      expect(ftp).toBe(235);
+    });
+
+    it("returns null when no Ride entry has an FTP set", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ id: 2, types: ["Ride"], ftp: null }],
+      });
+      expect(await client.getFtp()).toBeNull();
+    });
+
+    it("returns null when the response is not an array", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      expect(await client.getFtp()).toBeNull();
+    });
+
+    it("throws on a non-ok response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () => "forbidden",
+      });
+      await expect(client.getFtp()).rejects.toThrow("Intervals.icu API error (403)");
+    });
+  });
+
   describe("getActivities", () => {
     it("fetches activities and normalizes the fields we care about", async () => {
       mockFetch.mockResolvedValueOnce({
