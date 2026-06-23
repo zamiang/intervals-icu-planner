@@ -94,4 +94,38 @@ describe("computeReadiness", () => {
     });
     expect(computeReadiness(range, makeConfig()).status).toBe("normal");
   });
+
+  it("never suppresses on a flat baseline (sd 0 → no usable spread)", () => {
+    // All baseline HRV identical → SD 0 → deviation can't be scored, so even a
+    // large recent drop must not fire.
+    const range = makeRange({ baselineHrv: Array(16).fill(60), recentHrv: [30, 30, 30, 30] });
+    expect(computeReadiness(range, makeConfig()).status).not.toBe("suppressed");
+  });
+
+  it("abstains when the recent window has only one reading (median can't resist an artifact)", () => {
+    // Sparse logging: 20 baseline readings, then a gap, then a single recent
+    // morning. Only that one entry falls in the date-based recent window.
+    const entries: WellnessEntry[] = [];
+    for (let i = 0; i < 20; i++) {
+      const d = new Date(Date.UTC(2026, 4, 24) + i * 86_400_000); // 2026-05-24 .. 06-12
+      entries.push({ date: d.toISOString().slice(0, 10), ctl: 50, atl: 50, tsb: 0, restingHR: 50 });
+    }
+    entries.push({ date: "2026-06-23", ctl: 50, atl: 50, tsb: 0, restingHR: 80 });
+    expect(computeReadiness(entries, makeConfig()).status).toBe("unknown");
+  });
+
+  it("reports both signals in the reason when HRV and RHR are simultaneously suppressed", () => {
+    const baselineHrv = [55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 60, 60];
+    const range = makeRange({
+      baselineHrv,
+      recentHrv: [44, 44, 44, 44],
+      baselineRhr: Array(16).fill(50),
+      recentRhr: [60, 60, 60, 60],
+    });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.status).toBe("suppressed");
+    expect(r.reason).toContain("HRV");
+    expect(r.reason).toContain("resting HR");
+    expect(r.reason).toContain(", "); // both bits joined
+  });
 });

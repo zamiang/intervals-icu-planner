@@ -25,6 +25,20 @@ const median = (xs: number[]): number => {
 const stdev = (xs: number[], mu: number): number =>
   xs.length < 2 ? 0 : Math.sqrt(xs.reduce((s, x) => s + (x - mu) ** 2, 0) / (xs.length - 1));
 
+// `iso` (YYYY-MM-DD) shifted back `n` calendar days, in UTC so the date prefix
+// is stable regardless of host timezone.
+function isoMinusDays(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Below this many readings in the recent window, the median can't resist a lone
+// artifact (median of one or two values just is, or averages, those values), so
+// the outlier protection the median buys is weakened. We still compute a signal
+// from a 2-sample window but won't act on a single reading.
+const MIN_RECENT_SAMPLES = 2;
+
 // Compare a short trailing window of HRV / resting-HR against a longer baseline.
 // Single-day HRV is noisy, so we average the most recent `recent_days` and test
 // that against the mean ± SD of the preceding `baseline_days` (the
@@ -37,8 +51,18 @@ export function computeReadiness(range: WellnessEntry[], config: Config): Readin
   if (!r?.enabled) return { status: "unknown" };
 
   const sorted = [...range].sort((a, b) => a.date.localeCompare(b.date));
-  const recent = sorted.slice(-r.recent_days);
-  const baseline = sorted.slice(-(r.recent_days + r.baseline_days), -r.recent_days);
+  if (sorted.length === 0) return { status: "unknown" };
+
+  // Window by calendar date, not by entry count, anchored to the most recent
+  // reading (a missing entry for today mustn't shift the windows). The recent
+  // window is the last `recent_days` days; the baseline is the `baseline_days`
+  // before that. Sparse logging then narrows a window rather than silently
+  // pulling baseline-age days into "recent".
+  const latest = sorted[sorted.length - 1].date;
+  const recentStart = isoMinusDays(latest, r.recent_days - 1);
+  const baselineStart = isoMinusDays(latest, r.recent_days - 1 + r.baseline_days);
+  const recent = sorted.filter((e) => e.date >= recentStart);
+  const baseline = sorted.filter((e) => e.date >= baselineStart && e.date < recentStart);
 
   const pick = (es: WellnessEntry[], key: "hrvSDNN" | "restingHR"): number[] =>
     es.map((e) => e[key]).filter((v): v is number => typeof v === "number" && v > 0);
@@ -48,8 +72,8 @@ export function computeReadiness(range: WellnessEntry[], config: Config): Readin
   const recRhr = pick(recent, "restingHR");
   const baseRhr = pick(baseline, "restingHR");
 
-  const haveHrv = recHrv.length >= 1 && baseHrv.length >= r.min_baseline_samples;
-  const haveRhr = recRhr.length >= 1 && baseRhr.length >= r.min_baseline_samples;
+  const haveHrv = recHrv.length >= MIN_RECENT_SAMPLES && baseHrv.length >= r.min_baseline_samples;
+  const haveRhr = recRhr.length >= MIN_RECENT_SAMPLES && baseRhr.length >= r.min_baseline_samples;
   if (!haveHrv && !haveRhr) return { status: "unknown" };
 
   let hrvDeviationSd: number | undefined;

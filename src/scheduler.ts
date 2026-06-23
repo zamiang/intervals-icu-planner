@@ -8,6 +8,7 @@ import type {
   XertTrainingInfo,
 } from "./types.js";
 import { mostDeficientZone, zoneLabel, type Zone } from "./zones.js";
+import type { ReadinessSignal } from "./readiness.js";
 
 function addDays(dateStr: string, days: number): string {
   // Parse and mutate in UTC throughout. A bare "YYYY-MM-DD" is parsed as UTC
@@ -44,6 +45,17 @@ export function downgradeOneTier(f: FatigueLevel): FatigueLevel {
   if (f === "fresh") return "moderate";
   if (f === "moderate") return "fatigued";
   return f; // fatigued / very_fatigued unchanged
+}
+
+// Fold a readiness signal into a TSB-derived fatigue tier: a suppressed signal
+// downgrades one tier, anything else (normal / unknown / absent) leaves it
+// unchanged. Single source of truth so schedule() and the CLI status line never
+// drift on how readiness maps to a tier.
+export function effectiveFatigue(
+  tsbFatigue: FatigueLevel,
+  readiness?: ReadinessSignal,
+): FatigueLevel {
+  return readiness?.status === "suppressed" ? downgradeOneTier(tsbFatigue) : tsbFatigue;
 }
 
 export type Phase = "block" | "taper";
@@ -219,9 +231,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
 
   // TSB sets the base tier; suppressed HRV/RHR readiness downgrades it one tier
   // (floored at "fatigued"), the same easy-bias philosophy as the ramp guard.
-  const tsbFatigue = classifyFatigue(trainingLoad.tsb, config);
-  const fatigue =
-    input.readiness?.status === "suppressed" ? downgradeOneTier(tsbFatigue) : tsbFatigue;
+  const fatigue = effectiveFatigue(classifyFatigue(trainingLoad.tsb, config), input.readiness);
   // When the ramp guard fires, treat the week as moderate at best — drops
   // hard cycling targets entirely and downgrades hard fills to easy. Same
   // philosophy as the TSB-driven downgrade, just driven by CTL ramp.

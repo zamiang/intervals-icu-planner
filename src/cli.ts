@@ -3,7 +3,7 @@ loadEnv({ quiet: true });
 import { loadConfig } from "./config.js";
 import { IntervalsClient } from "./intervals.js";
 import { XertClient } from "./xert.js";
-import { schedule, classifyFatigue, downgradeOneTier, rampGuardTriggered } from "./scheduler.js";
+import { schedule, classifyFatigue, effectiveFatigue, rampGuardTriggered } from "./scheduler.js";
 import { computeReadiness } from "./readiness.js";
 import { todayLocal, addLocalDays } from "./dates.js";
 import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zones.js";
@@ -354,10 +354,9 @@ async function main() {
     readiness,
   });
 
-  const tsbFatigue = classifyFatigue(load.tsb, config);
   // Match the scheduler: suppressed readiness downgrades the displayed tier too,
   // so the status line never contradicts the plan it printed.
-  const fatigue = readiness.status === "suppressed" ? downgradeOneTier(tsbFatigue) : tsbFatigue;
+  const fatigue = effectiveFatigue(classifyFatigue(load.tsb, config), readiness);
   const fatigueLabel: Record<string, string> = {
     fresh: "fresh — scheduling hard rides",
     moderate: "moderate — mixed intensity",

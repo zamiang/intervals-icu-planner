@@ -123,6 +123,10 @@ function validateReadiness(raw: unknown): Partial<ReadinessConfig> {
     if (typeof obj[field] !== "number") {
       throw new Error(`readiness.${field} must be a number`);
     }
+    // `as never`, not `as number`: ReadinessConfig has a boolean member
+    // (`enabled`), so indexing Partial<ReadinessConfig> with a union key
+    // collapses the assignable type to `never`. `field` is always a numeric key
+    // here (enabled is validated separately above), so this is safe at runtime.
     out[field] = obj[field] as never;
   }
   return out;

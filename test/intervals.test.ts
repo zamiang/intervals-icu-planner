@@ -142,6 +142,21 @@ describe("IntervalsClient", () => {
       ]);
     });
 
+    it("passes through hrvSDNN and restingHR when present", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { id: "2026-04-19", ctl: 55, atl: 60, tsb: -5, hrvSDNN: 48.3, restingHR: 52 },
+          { id: "2026-04-20", ctl: 56, atl: 62, tsb: -6 }, // no morning reading
+        ],
+      });
+      const range = await client.getTrainingLoadRange("2026-04-19", "2026-04-20");
+      expect(range[0].hrvSDNN).toBe(48.3);
+      expect(range[0].restingHR).toBe(52);
+      expect(range[1].hrvSDNN).toBeUndefined();
+      expect(range[1].restingHR).toBeUndefined();
+    });
+
     it("returns empty array when the response is not an array", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

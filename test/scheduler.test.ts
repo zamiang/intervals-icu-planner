@@ -493,6 +493,22 @@ describe("schedule", () => {
       );
       expect(result.filter((w) => w.type === "sweet_spot")).toHaveLength(1);
     });
+
+    it("leaves a very_fatigued week's plan byte-for-byte unchanged when suppressed", () => {
+      // very_fatigued is already the floor: a suppressed signal must not deepen
+      // the protocol. The whole plan (day-0 rest, single weights, no sweet-spot,
+      // all-easy cycling) should match the no-readiness baseline exactly.
+      const veryFatiguedLoad = { ctl: 50, atl: 75, tsb: -25 };
+      const base = schedule(makeInput({ trainingLoad: veryFatiguedLoad }));
+      const suppressed = schedule(
+        makeInput({ trainingLoad: veryFatiguedLoad, readiness: { status: "suppressed" } }),
+      );
+      expect(suppressed).toEqual(base);
+      // And sanity-check the very_fatigued shape itself.
+      expect(suppressed[0].type).toBe("rest");
+      expect(suppressed.filter((w) => w.type === "sweet_spot")).toHaveLength(0);
+      expect(suppressed.filter((w) => w.type === "weights")).toHaveLength(1);
+    });
   });
 
   describe("downgradeOneTier", () => {
