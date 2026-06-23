@@ -142,6 +142,21 @@ describe("IntervalsClient", () => {
       ]);
     });
 
+    it("passes through hrvSDNN and restingHR when present", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { id: "2026-04-19", ctl: 55, atl: 60, tsb: -5, hrvSDNN: 48.3, restingHR: 52 },
+          { id: "2026-04-20", ctl: 56, atl: 62, tsb: -6 }, // no morning reading
+        ],
+      });
+      const range = await client.getTrainingLoadRange("2026-04-19", "2026-04-20");
+      expect(range[0].hrvSDNN).toBe(48.3);
+      expect(range[0].restingHR).toBe(52);
+      expect(range[1].hrvSDNN).toBeUndefined();
+      expect(range[1].restingHR).toBeUndefined();
+    });
+
     it("returns empty array when the response is not an array", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -149,6 +164,56 @@ describe("IntervalsClient", () => {
       });
       const range = await client.getTrainingLoadRange("2026-04-19", "2026-04-20");
       expect(range).toEqual([]);
+    });
+  });
+
+  describe("getFtp", () => {
+    it("returns the FTP from the sport-settings entry whose types include Ride", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { id: 1, types: ["Run", "TrailRun"], ftp: null, lthr: 163 },
+          { id: 2, types: ["Ride", "VirtualRide"], ftp: 235, lthr: 160 },
+        ],
+      });
+
+      const ftp = await client.getFtp();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://intervals.icu/api/v1/athlete/0/sport-settings",
+        expect.any(Object),
+      );
+      expect(ftp).toBe(235);
+    });
+
+    it("returns null when no Ride entry has an FTP set", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ id: 2, types: ["Ride"], ftp: null }],
+      });
+      expect(await client.getFtp()).toBeNull();
+    });
+
+    it("treats an explicit FTP of 0 as not set (null)", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ id: 2, types: ["Ride"], ftp: 0 }],
+      });
+      expect(await client.getFtp()).toBeNull();
+    });
+
+    it("returns null when the response is not an array", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      expect(await client.getFtp()).toBeNull();
+    });
+
+    it("throws on a non-ok response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () => "forbidden",
+      });
+      await expect(client.getFtp()).rejects.toThrow("Intervals.icu API error (403)");
     });
   });
 

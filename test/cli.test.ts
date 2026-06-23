@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   parseArgs,
   formatPlan,
+  formatReadiness,
   workoutToEvent,
   computeWeeklyRampPct,
   resolveRaceDate,
@@ -43,6 +44,20 @@ describe("parseArgs", () => {
 
   it("throws on no command", () => {
     expect(() => parseArgs([])).toThrow("No command");
+  });
+});
+
+describe("formatReadiness", () => {
+  it("summarizes a suppressed signal with its reason and the planner effect", () => {
+    const out = formatReadiness({ status: "suppressed", reason: "HRV -1.7σ below baseline" });
+    expect(out).toContain("suppressed");
+    expect(out).toContain("HRV -1.7σ below baseline");
+    expect(out).toContain("one tier");
+  });
+
+  it("renders normal and unknown plainly", () => {
+    expect(formatReadiness({ status: "normal" })).toBe("normal");
+    expect(formatReadiness({ status: "unknown" })).toContain("n/a");
   });
 });
 

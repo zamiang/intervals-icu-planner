@@ -150,3 +150,17 @@ load_targets:
   hard_if: 0.88 # hard interval ride IF → ~90 TSS at 75 min
   hard_minutes: 75
   sweet_spot_if: 0.88 # applied to the sweet_spot session (60 min) → ~77 TSS
+
+# Readiness guard: HRV / resting-HR trend from Intervals.icu wellness. A short
+# recent window is compared to a longer rolling baseline; a clear drop downgrades
+# the week one fatigue tier (floored at "fatigued"), the same easy-bias logic as
+# the ramp guard. It only ever makes the week easier, never harder. Defaults are
+# the conservative preset — react only to a sustained drop. Set enabled: false to
+# plan on TSB alone.
+readiness:
+  enabled: true
+  recent_days: 4 # trailing window averaged as "today's" readiness
+  baseline_days: 28 # window before the recent one used as the personal baseline
+  min_baseline_samples: 14 # need this many baseline readings or readiness abstains
+  hrv_drop_sd: 1.5 # recent HRV ≤ baseline_mean − 1.5·SD → suppressed
+  rhr_rise_bpm: 7 # recent resting HR ≥ baseline_median + 7 bpm → suppressed

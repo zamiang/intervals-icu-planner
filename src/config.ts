@@ -4,6 +4,7 @@ import type {
   Config,
   LoadTargetsConfig,
   PeriodizationConfig,
+  ReadinessConfig,
   SchedulingConfig,
   WorkoutDefinition,
 } from "./types.js";
@@ -33,6 +34,15 @@ const LOAD_TARGETS_DEFAULTS: LoadTargetsConfig = {
   hard_if: 0.88,
   hard_minutes: 75,
   sweet_spot_if: 0.88,
+};
+
+const READINESS_DEFAULTS: ReadinessConfig = {
+  enabled: true,
+  recent_days: 4,
+  baseline_days: 28,
+  min_baseline_samples: 14,
+  hrv_drop_sd: 1.5,
+  rhr_rise_bpm: 7,
 };
 
 function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
@@ -82,6 +92,39 @@ function validateLoadTargets(raw: unknown): Partial<LoadTargetsConfig> {
     if (obj[field] === undefined) continue;
     if (typeof obj[field] !== "number") {
       throw new Error(`load_targets.${field} must be a number`);
+    }
+    out[field] = obj[field] as number;
+  }
+  return out;
+}
+
+function validateReadiness(raw: unknown): Partial<ReadinessConfig> {
+  if (raw == null) return {};
+  if (typeof raw !== "object") {
+    throw new Error("readiness must be an object");
+  }
+  const obj = raw as Record<string, unknown>;
+  const out: Partial<ReadinessConfig> = {};
+  if (obj.enabled !== undefined) {
+    if (typeof obj.enabled !== "boolean") {
+      throw new Error("readiness.enabled must be a boolean");
+    }
+    out.enabled = obj.enabled;
+  }
+  // Exclude the boolean `enabled` key (validated above) so the indexed write
+  // type stays `number` — this lets us use `as number` like the sibling
+  // validators instead of an `as never` escape hatch.
+  const numericFields: Exclude<keyof ReadinessConfig, "enabled">[] = [
+    "recent_days",
+    "baseline_days",
+    "min_baseline_samples",
+    "hrv_drop_sd",
+    "rhr_rise_bpm",
+  ];
+  for (const field of numericFields) {
+    if (obj[field] === undefined) continue;
+    if (typeof obj[field] !== "number") {
+      throw new Error(`readiness.${field} must be a number`);
     }
     out[field] = obj[field] as number;
   }
@@ -167,6 +210,11 @@ export async function loadConfig(filePath: string): Promise<Config> {
     ...validatePeriodization(doc.periodization),
   };
 
+  const readiness: ReadinessConfig = {
+    ...READINESS_DEFAULTS,
+    ...validateReadiness(doc.readiness),
+  };
+
   return {
     weight_training,
     weight_training_taper,
@@ -174,5 +222,6 @@ export async function loadConfig(filePath: string): Promise<Config> {
     scheduling,
     load_targets,
     periodization,
+    readiness,
   };
 }

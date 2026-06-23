@@ -116,13 +116,14 @@ export class IntervalsClient {
     if (!Array.isArray(data)) return [];
     return data.map((entry) => {
       const load = parseWellnessEntry(entry);
-      const date =
-        entry &&
-        typeof entry === "object" &&
-        typeof (entry as Record<string, unknown>).id === "string"
-          ? ((entry as Record<string, unknown>).id as string)
-          : "";
-      return { date, ...load };
+      const e = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+      const date = typeof e.id === "string" ? e.id : "";
+      return {
+        date,
+        ...load,
+        ...(typeof e.hrvSDNN === "number" ? { hrvSDNN: e.hrvSDNN } : {}),
+        ...(typeof e.restingHR === "number" ? { restingHR: e.restingHR } : {}),
+      };
     });
   }
 
@@ -131,6 +132,30 @@ export class IntervalsClient {
     if (range.length === 0) return { ctl: 0, atl: 0, tsb: 0 };
     const { ctl, atl, tsb } = range[0];
     return { ctl, atl, tsb };
+  }
+
+  // Current cycling FTP from the athlete's Intervals.icu sport settings. The
+  // endpoint returns one settings object per sport group; we read the one whose
+  // `types` includes "Ride". This is the FTP that actually paces the structured
+  // `% FTP` workouts (Intervals.icu resolves them against this value), so it's
+  // the authoritative source for what the athlete will ride. Returns null when
+  // no Ride FTP is set (e.g. a run/swim-only athlete or unconfigured account).
+  async getFtp(): Promise<number | null> {
+    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/sport-settings`;
+    const res = await this.fetch(url, { headers: this.headers });
+    if (!res.ok) {
+      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
+    }
+    const data = await res.json();
+    if (!Array.isArray(data)) return null;
+    const ride = data.find((s) => {
+      if (!s || typeof s !== "object") return false;
+      const types = (s as Record<string, unknown>).types;
+      return Array.isArray(types) && types.includes("Ride");
+    }) as Record<string, unknown> | undefined;
+    // `> 0`: some accounts report an unset FTP as 0, which should read as
+    // "not set", not a literal 0 W (mirrors the v > 0 guard in readiness.ts).
+    return ride && typeof ride.ftp === "number" && ride.ftp > 0 ? ride.ftp : null;
   }
 
   async getActivities(oldest: string, newest: string): Promise<Activity[]> {

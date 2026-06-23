@@ -6,6 +6,7 @@ import {
   rampGuardTriggered,
   classifyPhase,
   phaseWeightSessions,
+  downgradeOneTier,
 } from "../src/scheduler.js";
 import { emptyDistribution } from "../src/zones.js";
 import type { SchedulerInput, IntervalsEvent, Config, PlannedWorkout } from "../src/types.js";
@@ -48,6 +49,14 @@ const BASE_CONFIG: Config = {
     taper_weeks: 4,
     taper_zero_weeks: 1,
     race_date: null,
+  },
+  readiness: {
+    enabled: true,
+    recent_days: 4,
+    baseline_days: 28,
+    min_baseline_samples: 14,
+    hrv_drop_sd: 1.5,
+    rhr_rise_bpm: 7,
   },
 };
 
@@ -450,6 +459,85 @@ describe("schedule", () => {
       // Guard only affects cycling intensity, not strength/sweet-spot cadence.
       expect(result.filter((w) => w.type === "sweet_spot")).toHaveLength(1);
       expect(result.filter((w) => w.type === "weights")).toHaveLength(2);
+    });
+  });
+
+  describe("readiness downgrade", () => {
+    const freshLoad = { ctl: 50, atl: 40, tsb: 12 }; // fresh
+
+    it("drops hard cycling to non-hard when readiness is suppressed on a fresh week", () => {
+      const baseline = schedule(makeInput({ trainingLoad: freshLoad }));
+      expect(baseline.some((w) => w.type === "cycling" && w.intensity === "hard")).toBe(true);
+
+      const suppressed = schedule(
+        makeInput({ trainingLoad: freshLoad, readiness: { status: "suppressed" } }),
+      );
+      for (const ride of suppressed.filter((w) => w.type === "cycling")) {
+        expect(ride.intensity).not.toBe("hard");
+      }
+    });
+
+    it("does not change the week when readiness is normal", () => {
+      const normal = schedule(
+        makeInput({ trainingLoad: freshLoad, readiness: { status: "normal" } }),
+      );
+      expect(normal.some((w) => w.type === "cycling" && w.intensity === "hard")).toBe(true);
+    });
+
+    it("never deepens into the very_fatigued protocol from readiness alone", () => {
+      // fatigued TSB downgraded by readiness stays fatigued (floor), so a
+      // sweet-spot session is still scheduled rather than dropped.
+      const fatiguedLoad = { ctl: 50, atl: 65, tsb: -15 };
+      const result = schedule(
+        makeInput({ trainingLoad: fatiguedLoad, readiness: { status: "suppressed" } }),
+      );
+      expect(result.filter((w) => w.type === "sweet_spot")).toHaveLength(1);
+    });
+
+    it("does not stack with the ramp guard — a suppressed fresh+ramp week equals a plain moderate week", () => {
+      // fresh TSB → suppressed downgrades to moderate; classifyIntensity is then
+      // "moderate", so the ramp guard's `baseIntensity === "hard"` check is
+      // already false. The two guards must not compound into something harsher
+      // than a normal moderate week.
+      const suppressedFreshRamp = schedule(
+        makeInput({
+          trainingLoad: freshLoad,
+          readiness: { status: "suppressed" },
+          rampRatePct: 9.5,
+        }),
+      );
+      const plainModerate = schedule(makeInput({ trainingLoad: { ctl: 50, atl: 50, tsb: 0 } }));
+      expect(suppressedFreshRamp).toEqual(plainModerate);
+      expect(suppressedFreshRamp.some((w) => w.type === "cycling" && w.intensity === "hard")).toBe(
+        false,
+      );
+    });
+
+    it("leaves a very_fatigued week's plan byte-for-byte unchanged when suppressed", () => {
+      // very_fatigued is already the floor: a suppressed signal must not deepen
+      // the protocol. The whole plan (day-0 rest, single weights, no sweet-spot,
+      // all-easy cycling) should match the no-readiness baseline exactly.
+      const veryFatiguedLoad = { ctl: 50, atl: 75, tsb: -25 };
+      const base = schedule(makeInput({ trainingLoad: veryFatiguedLoad }));
+      const suppressed = schedule(
+        makeInput({ trainingLoad: veryFatiguedLoad, readiness: { status: "suppressed" } }),
+      );
+      expect(suppressed).toEqual(base);
+      // And sanity-check the very_fatigued shape itself.
+      expect(suppressed[0].type).toBe("rest");
+      expect(suppressed.filter((w) => w.type === "sweet_spot")).toHaveLength(0);
+      expect(suppressed.filter((w) => w.type === "weights")).toHaveLength(1);
+    });
+  });
+
+  describe("downgradeOneTier", () => {
+    it("steps fresh→moderate and moderate→fatigued", () => {
+      expect(downgradeOneTier("fresh")).toBe("moderate");
+      expect(downgradeOneTier("moderate")).toBe("fatigued");
+    });
+    it("floors at fatigued — fatigued and very_fatigued are unchanged", () => {
+      expect(downgradeOneTier("fatigued")).toBe("fatigued");
+      expect(downgradeOneTier("very_fatigued")).toBe("very_fatigued");
     });
   });
 

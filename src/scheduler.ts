@@ -8,6 +8,7 @@ import type {
   XertTrainingInfo,
 } from "./types.js";
 import { mostDeficientZone, zoneLabel, type Zone } from "./zones.js";
+import type { ReadinessSignal } from "./readiness.js";
 
 function addDays(dateStr: string, days: number): string {
   // Parse and mutate in UTC throughout. A bare "YYYY-MM-DD" is parsed as UTC
@@ -33,6 +34,28 @@ export function classifyFatigue(tsb: number, config: Config): FatigueLevel {
   if (tsb < config.scheduling.tsb_fatigued) return "fatigued";
   if (tsb > config.scheduling.tsb_fresh) return "fresh";
   return "moderate";
+}
+
+// Suppressed readiness (HRV/RHR) pulls the week down one fatigue tier, floored
+// at "fatigued". A single low-HRV morning shouldn't fire the full very_fatigued
+// protocol (day-0 rest + sweet-spot drop) on its own — TSB still owns that
+// deepest tier. Mirrors the ramp guard: a real recovery signal can only ever
+// make the week easier, never harder.
+export function downgradeOneTier(f: FatigueLevel): FatigueLevel {
+  if (f === "fresh") return "moderate";
+  if (f === "moderate") return "fatigued";
+  return f; // fatigued / very_fatigued unchanged
+}
+
+// Fold a readiness signal into a TSB-derived fatigue tier: a suppressed signal
+// downgrades one tier, anything else (normal / unknown / absent) leaves it
+// unchanged. Single source of truth so schedule() and the CLI status line never
+// drift on how readiness maps to a tier.
+export function effectiveFatigue(
+  tsbFatigue: FatigueLevel,
+  readiness?: ReadinessSignal,
+): FatigueLevel {
+  return readiness?.status === "suppressed" ? downgradeOneTier(tsbFatigue) : tsbFatigue;
 }
 
 export type Phase = "block" | "taper";
@@ -206,7 +229,9 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     }
   }
 
-  const fatigue = classifyFatigue(trainingLoad.tsb, config);
+  // TSB sets the base tier; suppressed HRV/RHR readiness downgrades it one tier
+  // (floored at "fatigued"), the same easy-bias philosophy as the ramp guard.
+  const fatigue = effectiveFatigue(classifyFatigue(trainingLoad.tsb, config), input.readiness);
   // When the ramp guard fires, treat the week as moderate at best — drops
   // hard cycling targets entirely and downgrades hard fills to easy. Same
   // philosophy as the TSB-driven downgrade, just driven by CTL ramp.
