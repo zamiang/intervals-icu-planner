@@ -1,4 +1,5 @@
 import type { Zone } from "./zones.js";
+import type { ReadinessSignal } from "./readiness.js";
 
 // --- Config ---
 
@@ -38,6 +39,19 @@ export interface PeriodizationConfig {
   race_date: string | null; // default null — ISO date fallback when no RACE_A event exists
 }
 
+// Readiness from the HRV / resting-HR trend in Intervals.icu wellness. A short
+// trailing window is compared to a longer rolling baseline; a meaningful drop
+// downgrades the week one fatigue tier (it never upgrades). Defaults are the
+// "conservative" preset — only react to a clear, sustained drop.
+export interface ReadinessConfig {
+  enabled: boolean; // default true — when false the scheduler ignores HRV/RHR entirely
+  recent_days: number; // default 4 — trailing window averaged as "today's" readiness
+  baseline_days: number; // default 28 — window preceding the recent one used as the baseline
+  min_baseline_samples: number; // default 14 — need this many baseline readings or we abstain
+  hrv_drop_sd: number; // default 1.5 — recent HRV ≤ baseline_mean − this·SD ⇒ suppressed
+  rhr_rise_bpm: number; // default 7 — recent resting HR ≥ baseline_mean + this ⇒ suppressed
+}
+
 export interface Config {
   weight_training: WorkoutDefinition;
   weight_training_taper?: WorkoutDefinition; // optional; falls back to weight_training
@@ -45,6 +59,7 @@ export interface Config {
   scheduling: SchedulingConfig;
   load_targets: LoadTargetsConfig;
   periodization: PeriodizationConfig;
+  readiness: ReadinessConfig;
 }
 
 // --- Intervals.icu ---
@@ -71,6 +86,8 @@ export interface TrainingLoad {
 
 export interface WellnessEntry extends TrainingLoad {
   date: string; // YYYY-MM-DD (from the wellness `id` field)
+  hrvSDNN?: number; // ms (Intervals.icu `hrvSDNN`); absent on days with no morning reading
+  restingHR?: number; // bpm (Intervals.icu `restingHR`); absent on days with no morning reading
 }
 
 export interface Activity {
@@ -126,4 +143,5 @@ export interface SchedulerInput {
   rampRatePct?: number; // trailing-week CTL ramp; triggers guard above threshold
   completedDates?: string[]; // dates with a logged activity; locked like existing events. Callers pass YYYY-MM-DD, but the scheduler normalizes to the date prefix so timestamps are accepted too
   weeksToRace?: number; // whole weeks until the A race; undefined when no race is known
+  readiness?: ReadinessSignal; // HRV/RHR readiness; absent ⇒ scheduler behaves exactly as before
 }

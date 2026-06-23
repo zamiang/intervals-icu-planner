@@ -116,13 +116,14 @@ export class IntervalsClient {
     if (!Array.isArray(data)) return [];
     return data.map((entry) => {
       const load = parseWellnessEntry(entry);
-      const date =
-        entry &&
-        typeof entry === "object" &&
-        typeof (entry as Record<string, unknown>).id === "string"
-          ? ((entry as Record<string, unknown>).id as string)
-          : "";
-      return { date, ...load };
+      const e = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+      const date = typeof e.id === "string" ? e.id : "";
+      return {
+        date,
+        ...load,
+        ...(typeof e.hrvSDNN === "number" ? { hrvSDNN: e.hrvSDNN } : {}),
+        ...(typeof e.restingHR === "number" ? { restingHR: e.restingHR } : {}),
+      };
     });
   }
 

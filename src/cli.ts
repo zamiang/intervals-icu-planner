@@ -3,7 +3,8 @@ loadEnv({ quiet: true });
 import { loadConfig } from "./config.js";
 import { IntervalsClient } from "./intervals.js";
 import { XertClient } from "./xert.js";
-import { schedule, classifyFatigue, rampGuardTriggered } from "./scheduler.js";
+import { schedule, classifyFatigue, downgradeOneTier, rampGuardTriggered } from "./scheduler.js";
+import { computeReadiness } from "./readiness.js";
 import { todayLocal, addLocalDays } from "./dates.js";
 import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zones.js";
 import { structuredWorkoutFor } from "./workout.js";
@@ -295,6 +296,12 @@ async function main() {
   const raceHorizonStr = addLocalDays(today, 364);
   const lookbackStr = addLocalDays(today, -28);
   const weekAgoStr = addLocalDays(today, -7);
+  // The readiness baseline needs ~a month of wellness, well past the 7 days the
+  // ramp uses. Fetch the wider window once and slice the ramp back to 7 days.
+  const wellnessStr = addLocalDays(
+    today,
+    -(config.readiness.baseline_days + config.readiness.recent_days),
+  );
   // Fetch events from just before the window too: a hard session yesterday
   // must block a hard placement today (back-to-back) and a strength session
   // within min_weight_gap_days must push this week's first one out. The
@@ -309,13 +316,16 @@ async function main() {
     intervals.getEvents(eventLookbackStr, endStr),
     xert.getTrainingInfo(),
     intervals.getActivities(lookbackStr, today),
-    intervals.getTrainingLoadRange(weekAgoStr, today),
+    intervals.getTrainingLoadRange(wellnessStr, today),
     intervals.getEvents(today, raceHorizonStr),
   ]);
   const load = latestTrainingLoad(wellnessRange);
 
   const zoneDistribution = computeDistribution(activities);
-  const rampRatePct = computeWeeklyRampPct(wellnessRange);
+  // Ramp is a trailing-7-day measure, so slice the wider readiness window back
+  // down — computeWeeklyRampPct compares the range's endpoints.
+  const rampRatePct = computeWeeklyRampPct(wellnessRange.filter((e) => e.date >= weekAgoStr));
+  const readiness = computeReadiness(wellnessRange, config);
   // Activities already logged inside the planning window (typically today) lock
   // their day so the planner doesn't schedule on top of a completed session.
   const completedDates = [
@@ -339,9 +349,14 @@ async function main() {
     rampRatePct,
     completedDates,
     weeksToRace,
+    readiness,
   });
 
-  const fatigue = classifyFatigue(load.tsb, config);
+  const tsbFatigue = classifyFatigue(load.tsb, config);
+  // Match the scheduler: suppressed readiness downgrades the displayed tier too,
+  // so the status line never contradicts the plan it printed.
+  const fatigue =
+    readiness.status === "suppressed" ? downgradeOneTier(tsbFatigue) : tsbFatigue;
   const fatigueLabel: Record<string, string> = {
     fresh: "fresh — scheduling hard rides",
     moderate: "moderate — mixed intensity",
@@ -353,6 +368,9 @@ async function main() {
   console.log(
     `TSB ${load.tsb.toFixed(1)} (${fatigueLabel[fatigue] ?? fatigue}) — Xert: ${info.training_status || "n/a"}`,
   );
+  if (readiness.status === "suppressed") {
+    console.log(`READINESS: ${readiness.reason} — week downgraded one fatigue tier`);
+  }
   if (rampGuardTriggered(rampRatePct, config) && rampRatePct !== undefined) {
     console.log(
       `WARNING: CTL ramp +${rampRatePct.toFixed(1)}%/wk > ${config.scheduling.max_weekly_ramp_pct}% threshold — hard rides downgraded`,
