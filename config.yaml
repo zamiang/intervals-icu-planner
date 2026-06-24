@@ -164,3 +164,4 @@ readiness:
   min_baseline_samples: 14 # need this many baseline readings or readiness abstains
   hrv_drop_sd: 1.5 # recent HRV ≤ baseline_mean − 1.5·SD → suppressed
   rhr_rise_bpm: 7 # recent resting HR ≥ baseline_median + 7 bpm → suppressed
+  rhr_artifact_bpm: 25 # resting HR ≥ baseline_median + 25 bpm is a sensor artifact (e.g. a ride file's bogus "resting HR" overwriting wellness), dropped before the median so it can't fake a false alarm

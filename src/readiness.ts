@@ -70,8 +70,23 @@ export function computeReadiness(range: WellnessEntry[], config: Config): Readin
 
   const recHrv = pick(recent, "hrvSDNN");
   const baseHrv = pick(baseline, "hrvSDNN");
-  const recRhr = pick(recent, "restingHR");
+  const rawRecRhr = pick(recent, "restingHR");
   const baseRhr = pick(baseline, "restingHR");
+
+  // Drop resting-HR readings implausibly far above baseline before taking the
+  // median. Intervals.icu can overwrite a day's wellness restingHR with a
+  // per-ride "resting HR" estimate derived from the activity file (which has no
+  // genuine rest), yielding values like 102-110 against a true ~55 baseline. On
+  // a ride-heavy week several recent days carry this artifact at once, so the
+  // median alone (built to resist a *single* outlier) gets corrupted and fires a
+  // false alarm. The ceiling sits far above rhr_rise_bpm, so a real elevation
+  // (overtraining/illness rises gradually, single-to-low-double digits) still
+  // triggers; only sensor-scale jumps are discarded. Guard the baseline median
+  // against the same artifacts so the ceiling itself stays trustworthy.
+  const recRhr =
+    baseRhr.length >= r.min_baseline_samples
+      ? rawRecRhr.filter((v) => v <= median(baseRhr) + r.rhr_artifact_bpm)
+      : rawRecRhr;
 
   const haveHrv = recHrv.length >= MIN_RECENT_SAMPLES && baseHrv.length >= r.min_baseline_samples;
   const haveRhr = recRhr.length >= MIN_RECENT_SAMPLES && baseRhr.length >= r.min_baseline_samples;

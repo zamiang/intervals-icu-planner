@@ -43,6 +43,7 @@ const READINESS_DEFAULTS: ReadinessConfig = {
   min_baseline_samples: 14,
   hrv_drop_sd: 1.5,
   rhr_rise_bpm: 7,
+  rhr_artifact_bpm: 25,
 };
 
 function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
@@ -120,6 +121,7 @@ function validateReadiness(raw: unknown): Partial<ReadinessConfig> {
     "min_baseline_samples",
     "hrv_drop_sd",
     "rhr_rise_bpm",
+    "rhr_artifact_bpm",
   ];
   for (const field of numericFields) {
     if (obj[field] === undefined) continue;

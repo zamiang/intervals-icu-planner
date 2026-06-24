@@ -57,6 +57,7 @@ const BASE_CONFIG: Config = {
     min_baseline_samples: 14,
     hrv_drop_sd: 1.5,
     rhr_rise_bpm: 7,
+    rhr_artifact_bpm: 25,
   },
 };
 

@@ -50,6 +50,7 @@ export interface ReadinessConfig {
   min_baseline_samples: number; // default 14 — need this many baseline readings or we abstain
   hrv_drop_sd: number; // default 1.5 — recent HRV ≤ baseline_mean − this·SD ⇒ suppressed
   rhr_rise_bpm: number; // default 7 — recent resting HR ≥ baseline_median + this ⇒ suppressed
+  rhr_artifact_bpm: number; // default 25 — resting HR ≥ baseline_median + this is a sensor artifact (e.g. a ride file's bogus "resting HR" overwriting the wellness value), not physiology, and is dropped before the median. Well above rhr_rise_bpm so a real alarm still fires.
 }
 
 export interface Config {

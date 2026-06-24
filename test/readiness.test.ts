@@ -9,6 +9,7 @@ const READINESS_CONFIG: Config["readiness"] = {
   min_baseline_samples: 14,
   hrv_drop_sd: 1.5,
   rhr_rise_bpm: 7,
+  rhr_artifact_bpm: 25,
 };
 
 // Minimal Config — computeReadiness only reads config.readiness.
@@ -95,19 +96,41 @@ describe("computeReadiness", () => {
     expect(computeReadiness(range, makeConfig()).status).toBe("normal");
   });
 
-  it("documents that a 2-sample recent window loses median outlier protection", () => {
-    // MIN_RECENT_SAMPLES is 2, but median([artifact, normal]) is their average —
-    // no protection. This pins the known weak spot: with exactly two readings,
-    // one artifact CAN fire suppression. (Four readings, tested above, cannot.)
+  it("drops ride-day artifacts that dominate the recent window (the real-world bug)", () => {
+    // A ride-heavy week: Intervals.icu overwrote the wellness restingHR with a
+    // per-ride "resting HR" estimate on two of the four recent days (106, 110),
+    // against a true ~55 baseline. The median alone reads median([55,60,106,110])
+    // = 83 → +28 bpm → false alarm (this is exactly what fired on 2026-06-24).
+    // The artifact ceiling (baseline_median 55 + 25 = 80) drops 106 and 110
+    // before the median, leaving [55, 60] → +2.5 bpm → normal.
+    const range = makeRange({
+      baselineRhr: Array(20).fill(55),
+      recentRhr: [60, 106, 55, 110],
+    });
+    expect(computeReadiness(range, makeConfig()).status).toBe("normal");
+  });
+
+  it("still fires on a genuine elevation below the artifact ceiling", () => {
+    // +12 bpm is above rhr_rise_bpm (7) but below the artifact ceiling (25), so
+    // it's treated as a real physiological signal, not dropped.
+    const range = makeRange({ baselineRhr: Array(20).fill(50), recentRhr: [62, 62, 62, 62] });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.status).toBe("suppressed");
+    expect(r.reason).toContain("resting HR");
+  });
+
+  it("abstains when artifacts leave too few recent readings to judge", () => {
+    // Only two recent readings and one is an artifact: dropping it leaves a
+    // single reading (below MIN_RECENT_SAMPLES), so RHR readiness abstains rather
+    // than acting on the lone survivor.
     const entries: WellnessEntry[] = [];
     for (let i = 0; i < 20; i++) {
       const d = new Date(Date.UTC(2026, 4, 24) + i * 86_400_000); // 2026-05-24 .. 06-12
       entries.push({ date: d.toISOString().slice(0, 10), ctl: 50, atl: 50, tsb: 0, restingHR: 56 });
     }
     entries.push({ date: "2026-06-22", ctl: 50, atl: 50, tsb: 0, restingHR: 52 });
-    entries.push({ date: "2026-06-23", ctl: 50, atl: 50, tsb: 0, restingHR: 102 }); // artifact
-    // median([52, 102]) = 77 vs baseline 56 → +21 bpm → fires.
-    expect(computeReadiness(entries, makeConfig()).status).toBe("suppressed");
+    entries.push({ date: "2026-06-23", ctl: 50, atl: 50, tsb: 0, restingHR: 110 }); // artifact
+    expect(computeReadiness(entries, makeConfig()).status).toBe("unknown");
   });
 
   it("never suppresses on a flat baseline (sd 0 → no usable spread)", () => {
