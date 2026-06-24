@@ -7,20 +7,53 @@
 #   - an explicit `name`, `type` (Ride | WeightTraining | ...), `description`.
 #
 # By default the week is anchored to the upcoming Monday. Override with
-#   npm run push-week -- --start 2026-06-08
+#   npm run push-week -- --start 2026-06-22
 # Preview without writing to Intervals.icu with --dry-run. Days that already
 # have a calendar event are skipped so re-running never duplicates.
 
-# Week of 2026-06-15 — controlled rebuild after the absorption week.
-# Mon (Easy) and Tue (3h Long Endurance) are already on the calendar and are
-# skipped by push-week. This file fills Wed-Sun: one stacked quality day
-# (sweet-spot + strength, per the polarized-stacking rule), a full rest day
-# after it, a second aerobic touch Saturday, and the second strength session
-# Sunday (3-day gap from Thursday). Friday is deliberately left empty = rest.
-# Planned week ≈ 374 TSS — just under CTL-maintenance (~418) coming off the
-# sub-600 absorption week, well inside the 7% ramp guard.
+# Week of 2026-06-22 — DELIBERATE OVERREACH before a fully-off vacation week.
+# Rationale: TSB is already -12.6 ("very tired") and a recovery week was overdue
+# (flagged 06-14). Rather than back off now, we concentrate quality this week and
+# let next week's vacation be the recovery that supercompensates it. Two hard
+# interval days attack the sweet-spot/VO2 deficit (zone mix is ~96% endurance);
+# Friday is a true rest day so the quality days stay high-quality, not grey-zone.
+# Watts/HR use post-test FTP 235 / LTHR 160.
+#
+# Mon 06-22 already holds a completed 150-TSS Long Endurance Ride (locked).
+# Planned Tue-Sun adds ~470 TSS -> ~620 for the week, at the top of the
+# early-June peak (583-609). This INTENTIONALLY exceeds the 7% ramp guard, which
+# is why it's hand-tuned here rather than via `npm run plan`.
+#
+# UPDATE 06-24: Tue 06-23 Sweet Spot Intervals was SKIPPED (only the strength
+# session logged). Not being made up — week lands ~90 TSS lighter, with Thu VO2
+# as the single quality dose (kept: VO2 is the biggest zone deficit, 15% vs 0%)
+# plus the Sat long ride. Remaining Thu/Sat/Sun events already on the calendar.
+# NOTE: the earlier "suppressed readiness — RHR +28 bpm" was a DATA ARTIFACT,
+# not real fatigue: Intervals.icu's per-activity resting-HR estimate (102/106/110
+# on ride days 06-19/06-22/06-24) was overwriting the Apple Watch's true RHR
+# (52-65). Those corrupt wellness entries were deleted 06-24 and readiness is
+# back to "normal". HRV held 40-65 ms throughout. No deload warranted.
 
 sessions:
+  # Quality day 1 — stacked: intervals first on fresh-ish legs, lift after, to
+  # concentrate the stress and keep Wed genuinely easy.
+  - day: Tue
+    name: Sweet Spot Intervals
+    type: Ride
+    load: 90
+    minutes: 75
+    intensity: 0.85
+    description: >
+      Warm-up 15 min Z2 with 2-3 short 30s openers near threshold.
+      Main set: 3 x 15 min @ 88-94% FTP (~207-221W at 235 FTP), HR settling
+      ~147-152 (92-95% LTHR 160). 5 min easy spin between. Cooldown 8 min.
+      Progression from your 3x12 — hold steady even power, the work is the back
+      half of each rep. Cap of the sweet-spot deficit before vacation.
+
+  - day: Tue
+    workout: weight_training
+
+  # Easy recovery — protects the two quality days around it. Strictly Z2.
   - day: Wed
     name: Easy Z2 Ride
     type: Ride
@@ -28,39 +61,52 @@ sessions:
     minutes: 75
     intensity: 0.62
     description: >
-      Easy Zone 2 endurance ride, ~75 min. Conversational power/HR
-      (~160W at 260 FTP). Spin the legs out after Tuesday's long ride;
-      tomorrow is the week's quality day.
+      Easy Zone 2, ~75 min, conversational (~146W at 235 FTP, HR under ~133 /
+      83% LTHR). Pure recovery spin between yesterday's sweet-spot block and
+      tomorrow's VO2 work. No surges, no hills hammered.
 
+  # Quality day 2 — VO2/threshold, the intensity you've been at ~0% on. One
+  # clean dose on legs freshened by Wed; this is the highest-yield deficit fix.
   - day: Thu
-    # Replaced the planned sweet-spot session with an indoor FTP test (pushed
-    # 2026-06-11 via --replace): Xert estimates threshold ~237 W vs the 260 W
-    # the config assumes, so recalibrate before doing more sweet-spot work.
-    name: FTP Test (Indoor)
+    name: VO2 Max Intervals
     type: Ride
-    load: 76
-    minutes: 60
-    intensity: 0.87
+    load: 85
+    minutes: 70
+    intensity: 0.88
     description: >
-      Indoor FTP test on the trainer — 20-min protocol or ramp test (pick one
-      and reuse it). Update FTP in Intervals.icu and config.yaml afterwards.
+      Warm-up 15 min building, with 2 x 1 min openers at ~threshold.
+      Main set: 5 x 4 min @ 108-115% FTP (~254-270W at 235 FTP), 4 min easy
+      between — full recoveries so every rep hits VO2. Aim to fade no more than
+      ~5% across the set; if you can't hold 254W, drop to 4 reps rather than
+      grinding junk watts. Cooldown 10 min. First real VO2 dose of the block.
 
-  - day: Thu
-    workout: weight_training
-    # Stacked quality day: intervals first on fresh legs, lift after.
-    # Concentrating the stress here keeps Friday a true recovery day.
+  # Fri intentionally empty — true rest day before the weekend block. Sleep,
+  # walk, fuel. This is what keeps the overreach functional rather than a hole.
 
-  # Fri intentionally empty — full rest day after the stacked quality day.
-
+  # Durability anchor — long aerobic, extended. Biggest single day of the week.
   - day: Sat
-    name: Endurance Z2 Ride
+    name: Long Endurance Ride
     type: Ride
-    load: 74
-    minutes: 105
-    intensity: 0.65
+    load: 145
+    minutes: 200
+    intensity: 0.66
     description: >
-      Steady Zone 2 endurance ride, ~105 min. Strictly aerobic, no surges.
-      Practice century fueling: ~60-90 g carb/hr from the first 30 min.
+      Long Z2 endurance, ~3h20. Strictly aerobic (~155W at 235 FTP, HR under
+      ~133). Practice century fueling: 60-90 g carb/hr from the first 30 min.
+      Durability over intensity — keep it boring and steady to the end.
+
+  # Send-off — second strength + a moderate endurance ride, then peak fatigue
+  # lands right as the vacation rest begins. Exactly where you want it.
+  - day: Sun
+    name: Endurance Ride
+    type: Ride
+    load: 70
+    minutes: 95
+    intensity: 0.68
+    description: >
+      Steady endurance, ~95 min, upper-Z2/low tempo (~160W at 235 FTP). Ride it
+      how you feel — if the legs are cooked from the week, hold it strictly Z2.
+      Final session before vacation; empty the tank, then rest.
 
   - day: Sun
     workout: weight_training
