@@ -1,0 +1,78 @@
+name: Weekly training update
+
+# Every Monday morning: generate the week's plan and push it to the
+# Intervals.icu calendar, then sync recent Hevy strength-log detail into the
+# matching Intervals.icu activities.
+#
+# Safe to re-run (and safe alongside hand-tuned weeks pushed via push-week):
+# `plan` skips any day that already holds a calendar event or a completed
+# activity, and the Hevy importer only rewrites descriptions it authored.
+#
+# NOTE: GitHub suspends cron schedules after ~60 days without repo activity —
+# if a "schedule disabled" banner appears on the Actions tab, re-enable it or
+# push any commit.
+
+on:
+  schedule:
+    # 10:00 UTC Monday = 6:00 AM EDT / 5:00 AM EST (cron is UTC, no DST shift)
+    - cron: "0 10 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only — write nothing to Intervals.icu"
+        type: boolean
+        default: false
+
+env:
+  # The planner anchors "today" to the host-local date (src/dates.ts); without
+  # this the UTC runner would plan from the wrong day in the evening/overnight.
+  TZ: America/New_York
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Training status snapshot
+        run: npm run status
+        env:
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+          XERT_USERNAME: ${{ secrets.XERT_USERNAME }}
+          XERT_PASSWORD: ${{ secrets.XERT_PASSWORD }}
+
+      - name: Generate and push weekly plan
+        env:
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+          XERT_USERNAME: ${{ secrets.XERT_USERNAME }}
+          XERT_PASSWORD: ${{ secrets.XERT_PASSWORD }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            npm run plan -- --dry-run
+          else
+            npm run plan
+          fi
+
+      # Runs even if planning failed — the two updates are independent.
+      - name: Sync Hevy strength logs
+        if: ${{ !cancelled() }}
+        env:
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+          HEVY_API_KEY: ${{ secrets.HEVY_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            npm run push-strength:hevy -- --pages 2
+          else
+            npm run push-strength:hevy -- --pages 2 --apply
+          fi
