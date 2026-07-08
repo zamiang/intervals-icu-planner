@@ -211,8 +211,12 @@ export class IntervalsClient {
   // Activities (completed workouts) are separate from events (planned). Strong
   // strength sessions arrive here via the Intervals.icu Companion Apple Health
   // sync as WeightTraining activities with an empty description.
+  //
+  // Reads use /activity/{id}, like updateActivity: the athlete-scoped detail
+  // endpoint returns description: null even when one is set (observed
+  // 2026-07-08), which would blind the importers' non-ours overwrite guard.
   async getActivityDescription(id: string): Promise<string> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/activities/${id}`;
+    const url = `${BASE_URL}/activity/${id}`;
     const res = await this.fetch(url, { headers: this.headers });
     if (!res.ok) {
       throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
@@ -234,6 +238,23 @@ export class IntervalsClient {
     if (!res.ok) {
       throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
     }
+  }
+
+  // Create a manual activity (no recording file). Used by the Hevy importer
+  // when a strength session was logged in Hevy but never recorded on the
+  // watch, so no Companion-synced WeightTraining activity exists to decorate.
+  async createManualActivity(activity: Record<string, unknown>): Promise<{ id: string }> {
+    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/activities/manual`;
+    const res = await this.fetch(url, {
+      method: "POST",
+      headers: this.headers,
+      body: JSON.stringify(activity),
+    });
+    if (!res.ok) {
+      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
+    }
+    const data = (await res.json()) as Record<string, unknown>;
+    return { id: typeof data.id === "string" ? data.id : String(data.id ?? "") };
   }
 
   async deleteEvent(id: number): Promise<void> {

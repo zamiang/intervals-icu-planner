@@ -94,6 +94,7 @@ overwrites its own output but leaves hand-written descriptions alone unless
 npm run push-strength:hevy                  # dry run, recent Hevy workouts
 npm run push-strength:hevy -- --apply       # write descriptions
 npm run push-strength:hevy -- --since 2026-06-01
+npm run push-strength:hevy -- --apply --create-missing  # create unmatched activities
 npm run push-strength                        # Strong CSV importer (historical backfill)
 ```
 
@@ -101,6 +102,14 @@ npm run push-strength                        # Strong CSV importer (historical b
 matches workouts to activities by **UTC start time** within a tolerance window,
 so there's no timezone guesswork and no manual export. `push-strength` reads a
 Strong CSV export and matches by start timestamp — used for one-off backfill.
+
+With `--create-missing`, a Hevy workout that matches no existing
+`WeightTraining` activity (e.g. the session was never recorded on the watch,
+so the Companion sync created nothing) is pushed as a new **manual activity**
+with Hevy's start time and duration, instead of being reported as unmatched.
+This makes Hevy the source of truth for strength sessions: don't combine it
+with watch recordings of the same lift, or the created activity will duplicate
+the Companion-synced one.
 
 ## Weekly automation (GitHub Actions)
 
@@ -111,8 +120,9 @@ Strong CSV export and matches by start timestamp — used for one-off backfill.
    calendar. Days that already hold events or completed activities are
    skipped, so a hand-tuned week pushed via `push-week` beforehand wins and
    the action only fills what's empty.
-2. `npm run push-strength:hevy -- --apply` — writes recent Hevy lift detail
-   into the matching Intervals.icu strength activities.
+2. `npm run push-strength:hevy -- --create-missing --apply` — writes recent
+   Hevy lift detail into the matching Intervals.icu strength activities,
+   creating the activity first when no watch recording produced one.
 
 It needs four repository secrets (Settings → Secrets and variables → Actions),
 mirroring `.env`: `INTERVALS_API_KEY`, `XERT_USERNAME`, `XERT_PASSWORD`,

@@ -76,6 +76,9 @@ jobs:
           fi
 
       # Runs even if planning failed — the two updates are independent.
+      # --create-missing: a Hevy session with no Companion-synced activity
+      # (not recorded on the watch) is created as a manual activity rather
+      # than left unmatched. Hevy is the source of truth for strength.
       - name: Sync Hevy strength logs
         if: ${{ !cancelled() }}
         env:
@@ -84,7 +87,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run == true }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then
-            npm run push-strength:hevy -- --pages 2
+            npm run push-strength:hevy -- --pages 2 --create-missing
           else
-            npm run push-strength:hevy -- --pages 2 --apply
+            npm run push-strength:hevy -- --pages 2 --create-missing --apply
           fi
