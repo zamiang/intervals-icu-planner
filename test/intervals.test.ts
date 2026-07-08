@@ -308,7 +308,10 @@ describe("IntervalsClient", () => {
   });
 
   describe("getActivityDescription", () => {
-    it("fetches the activity and returns its description", async () => {
+    it("fetches via /activity/{id} (not the athlete-scoped path) and returns the description", async () => {
+      // Regression guard: the athlete-scoped detail endpoint returns
+      // description: null even when one is set, which would blind the
+      // importers' overwrite guard and clobber hand-written descriptions.
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({ id: "i999", description: "— logged from Strong —\nSquat: 6@90lb" }),
@@ -317,11 +320,12 @@ describe("IntervalsClient", () => {
       const desc = await client.getActivityDescription("i999");
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "https://intervals.icu/api/v1/athlete/0/activities/i999",
+        "https://intervals.icu/api/v1/activity/i999",
         expect.objectContaining({
           headers: expect.objectContaining({ Authorization: expect.stringContaining("Basic") }),
         }),
       );
+      expect(mockFetch.mock.calls[0][0]).not.toContain("/athlete/");
       expect(desc).toBe("— logged from Strong —\nSquat: 6@90lb");
     });
 
@@ -465,6 +469,51 @@ describe("IntervalsClient", () => {
           category: "WORKOUT",
         }),
       ).rejects.toThrow("Intervals.icu API error (404)");
+    });
+  });
+
+  describe("createManualActivity", () => {
+    it("POSTs to the athlete-scoped /activities/manual endpoint and returns the new id", async () => {
+      const activity = {
+        start_date_local: "2026-07-06T15:51:44",
+        type: "WeightTraining",
+        name: "Strength Training",
+        moving_time: 4126,
+        description: "— logged from Strong —\nZercher Squat: 4×6@90lb",
+        external_id: "hevy-627301a0",
+      };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: "i164000001", ...activity }),
+      });
+
+      const createdActivity = await client.createManualActivity(activity);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://intervals.icu/api/v1/athlete/0/activities/manual",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify(activity),
+        }),
+      );
+      expect(createdActivity.id).toBe("i164000001");
+    });
+
+    it("coerces a numeric id in the response to a string", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 12345 }) });
+      const createdActivity = await client.createManualActivity({ name: "x" });
+      expect(createdActivity.id).toBe("12345");
+    });
+
+    it("throws on non-ok response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 422,
+        text: async () => "could not be parsed",
+      });
+      await expect(client.createManualActivity({ name: "x" })).rejects.toThrow(
+        "Intervals.icu API error (422)",
+      );
     });
   });
 

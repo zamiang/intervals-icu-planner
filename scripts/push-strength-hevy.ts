@@ -17,6 +17,7 @@
 //   npm run push-strength:hevy -- --apply --force # overwrite non-Strong descriptions
 //   npm run push-strength:hevy -- --include-warmups
 //   npm run push-strength:hevy -- --tolerance 15  # match window in minutes (default 10)
+//   npm run push-strength:hevy -- --apply --create-missing  # create the activity when unmatched
 import { config as loadEnv } from "dotenv";
 loadEnv({ quiet: true });
 import { IntervalsClient } from "../src/intervals.js";
@@ -35,6 +36,7 @@ const args = process.argv.slice(2);
 const apply = args.includes("--apply");
 const force = args.includes("--force");
 const includeWarmups = args.includes("--include-warmups");
+const createMissing = args.includes("--create-missing");
 function flagValue(name: string): string | undefined {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
@@ -70,7 +72,20 @@ interface HevyWorkout {
   id: string;
   title: string;
   start_time: string; // UTC ISO, "...Z"
+  end_time: string; // UTC ISO, "...Z"
   exercises: HevyExercise[];
+}
+
+// Intervals.icu's manual-activity endpoint wants start_date_local; Hevy
+// reports UTC. Render in the host timezone (the weekly workflow pins TZ) —
+// the same local time the Companion app would have stamped on this session.
+function toLocalDateTime(utcIso: string): string {
+  const d = new Date(utcIso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  );
 }
 
 async function fetchHevyPage(page: number, apiKey: string): Promise<HevyWorkout[]> {
@@ -156,13 +171,15 @@ function matchActivity(startTimeUtc: string): string | null {
 
 console.log(
   `${apply ? "APPLYING" : "DRY RUN"} — ${selected.length} Hevy workout(s), ` +
-    `${oldest}..${newest}, ±${toleranceMin}min match${force ? ", force overwrite" : ""}\n`,
+    `${oldest}..${newest}, ±${toleranceMin}min match${force ? ", force overwrite" : ""}` +
+    `${createMissing ? ", create missing" : ""}\n`,
 );
 
 let matched = 0;
 let written = 0;
 let skipped = 0;
 let unmatched = 0;
+let created = 0;
 
 // Oldest-first output for readability.
 for (const w of [...selected].sort((a, b) => a.start_time.localeCompare(b.start_time))) {
@@ -175,8 +192,35 @@ for (const w of [...selected].sort((a, b) => a.start_time.localeCompare(b.start_
   const id = matchActivity(w.start_time);
 
   if (!id) {
-    unmatched++;
-    console.log(`✗ ${local}Z  "${w.title}"  no WeightTraining activity within ±${toleranceMin}min`);
+    if (!createMissing) {
+      unmatched++;
+      console.log(
+        `✗ ${local}Z  "${w.title}"  no WeightTraining activity within ±${toleranceMin}min`,
+      );
+      continue;
+    }
+    // No Companion-synced activity to decorate (the session was never
+    // recorded on the watch) — create a manual WeightTraining activity from
+    // the Hevy times instead. Hevy's `title` is the routine name and often
+    // stale, so use a plain name. Re-runs stay idempotent: the created
+    // activity matches by start time next run and MARKER owns its description.
+    created++;
+    const durationSecs = Math.round((Date.parse(w.end_time) - Date.parse(w.start_time)) / 1000);
+    console.log(
+      `+ ${local}Z  no matching activity — creating manual WeightTraining (${exerciseCount} exercises)`,
+    );
+    for (const line of description.split("\n").slice(1)) console.log(`      ${line}`);
+    if (apply) {
+      await client.createManualActivity({
+        start_date_local: toLocalDateTime(w.start_time),
+        type: "WeightTraining",
+        name: "Strength Training",
+        ...(Number.isFinite(durationSecs) && durationSecs > 0 ? { moving_time: durationSecs } : {}),
+        description,
+        external_id: `hevy-${w.id}`,
+      });
+      written++;
+    }
     continue;
   }
   matched++;
@@ -202,6 +246,6 @@ for (const w of [...selected].sort((a, b) => a.start_time.localeCompare(b.start_
 }
 
 console.log(
-  `\n${matched} matched, ${unmatched} unmatched, ${skipped} skipped` +
+  `\n${matched} matched, ${unmatched} unmatched, ${created} created, ${skipped} skipped` +
     (apply ? `, ${written} written.` : `. Re-run with --apply to write.`),
 );
