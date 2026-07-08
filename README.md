@@ -102,6 +102,29 @@ matches workouts to activities by **UTC start time** within a tolerance window,
 so there's no timezone guesswork and no manual export. `push-strength` reads a
 Strong CSV export and matches by start timestamp — used for one-off backfill.
 
+## Weekly automation (GitHub Actions)
+
+`.github/workflows/weekly-plan.yml` runs every **Monday at 10:00 UTC**
+(6 AM Eastern) and does two things:
+
+1. `npm run plan` — generates the week and pushes it to the Intervals.icu
+   calendar. Days that already hold events or completed activities are
+   skipped, so a hand-tuned week pushed via `push-week` beforehand wins and
+   the action only fills what's empty.
+2. `npm run push-strength:hevy -- --apply` — writes recent Hevy lift detail
+   into the matching Intervals.icu strength activities.
+
+It needs four repository secrets (Settings → Secrets and variables → Actions),
+mirroring `.env`: `INTERVALS_API_KEY`, `XERT_USERNAME`, `XERT_PASSWORD`,
+`HEVY_API_KEY`.
+
+Run it on demand from the Actions tab (`workflow_dispatch`), optionally with
+**dry run** checked to preview without writing. To hand-tune a week instead,
+edit `scripts/week-plan.yaml` and `npm run push-week` before Monday morning —
+the action will leave those days alone. GitHub pauses cron schedules after
+~60 days without repo activity; re-enable from the Actions tab if that
+happens.
+
 ## How the schedule is built
 
 For each 7-day window, starting from today:
