@@ -56,12 +56,18 @@ export function computeWeeklyRampPct(range: WellnessEntry[]): number | undefined
   return ((newest.ctl - oldest.ctl) / oldest.ctl) * 100;
 }
 
-// Most recent wellness entry with a populated CTL. Intervals.icu may return
-// today's entry with CTL 0 before activities sync, so reading a single day can
-// silently report zero fitness — fall back to the last day that actually has data.
-export function latestTrainingLoad(range: WellnessEntry[]): TrainingLoad {
+// Training load for planning decisions. Intervals.icu recomputes *today's*
+// wellness entry throughout the day as activities and planned loads sync, so its
+// CTL/ATL/TSB jitter until the day settles — reading it can flip the fatigue
+// tier (e.g. across tsb_fresh) on sync timing alone, not on any real change.
+// Prefer the most recent *fully-settled* day (strictly before `today`) so the
+// tier decision is stable across the sync window. Fall back to today's
+// provisional entry only when no earlier day has populated data (new athlete or
+// a sync gap), and to zeros when nothing is populated at all.
+export function latestTrainingLoad(range: WellnessEntry[], today: string): TrainingLoad {
   const populated = range.filter((e) => e.ctl > 0).sort((a, b) => a.date.localeCompare(b.date));
-  const pick = populated[populated.length - 1];
+  const settled = populated.filter((e) => e.date < today);
+  const pick = settled[settled.length - 1] ?? populated[populated.length - 1];
   if (!pick) return { ctl: 0, atl: 0, tsb: 0 };
   return { ctl: pick.ctl, atl: pick.atl, tsb: pick.tsb };
 }
@@ -273,7 +279,7 @@ async function main() {
     ]);
     const ftp = rideSettings?.ftp ?? null;
     const eftp = latestEftp(activities);
-    const load = latestTrainingLoad(wellnessRange);
+    const load = latestTrainingLoad(wellnessRange, today);
     const distribution = computeDistribution(activities);
     const rampRatePct = computeWeeklyRampPct(wellnessRange.filter((e) => e.date >= weekAgoStr));
     const readiness = computeReadiness(wellnessRange, config);
@@ -348,7 +354,7 @@ async function main() {
     intervals.getEvents(today, raceHorizonStr),
     intervals.getRideSportSettings(),
   ]);
-  const load = latestTrainingLoad(wellnessRange);
+  const load = latestTrainingLoad(wellnessRange, today);
 
   // eFTP sync before planning: the applied FTP is what Intervals.icu will
   // resolve this week's `% FTP` steps against, and what prose watt/HR
