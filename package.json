@@ -1,5 +1,5 @@
 {
-  "name": "workout-planner",
+  "name": "intervals-icu-planner",
   "version": "0.1.0",
   "description": "Weekly training planner — cycling + weights → Intervals.icu calendar",
   "type": "module",

@@ -1,4 +1,4 @@
-# workout-planner
+# intervals-icu-planner
 
 Weekly training planner for cyclists. Reads current form (CTL/ATL/TSB), zone
 distribution, FTP, and HRV/resting-HR readiness from Intervals.icu, schedules a

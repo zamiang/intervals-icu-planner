@@ -83,12 +83,14 @@ const VALID_COMMANDS: Command[] = ["plan", "status", "check"];
 
 export function parseArgs(args: string[]): ParsedArgs {
   if (args.length === 0) {
-    throw new Error("No command provided. Usage: workout-planner <plan|status|check>");
+    throw new Error("No command provided. Usage: intervals-icu-planner <plan|status|check>");
   }
 
   const command = args[0] as Command;
   if (!VALID_COMMANDS.includes(command)) {
-    throw new Error(`Unknown command: ${command}. Usage: workout-planner <plan|status|check>`);
+    throw new Error(
+      `Unknown command: ${command}. Usage: intervals-icu-planner <plan|status|check>`,
+    );
   }
 
   const dryRun = args.includes("--dry-run");

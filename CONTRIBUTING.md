@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving workout-planner!
+Thanks for your interest in improving intervals-icu-planner!
 
 ## Getting started
 
