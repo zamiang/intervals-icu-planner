@@ -1,9 +1,14 @@
-# workout-planner
+# intervals-icu-planner
 
-Weekly training planner for cyclists. Reads current form (CTL/ATL/TSB), zone
-distribution, FTP, and HRV/resting-HR readiness from Intervals.icu, schedules a
-7-day plan of cycling, sweet-spot intervals, weight training, and recovery, then
-pushes the plan as events to the Intervals.icu calendar.
+Weekly training planner for [Intervals.icu](https://intervals.icu): 80/20
+cycling + heavy strength, driven by your CTL/TSB, eFTP, and HRV readiness.
+
+It reads your current form (CTL/ATL/TSB), zone distribution, FTP, and
+HRV/resting-HR readiness from Intervals.icu, schedules a 7-day plan of easy
+Zone 2 riding, sweet-spot intervals, weight training, and recovery, then pushes
+the plan to your Intervals.icu calendar as structured workouts with power and
+HR targets. Strength sessions logged in [Hevy](https://www.hevyapp.com) sync
+back into the matching activities as set-by-set detail.
 
 ## Install
 
@@ -37,6 +42,11 @@ Workout definitions and scheduling rules live in `config.yaml`:
   the sweet-spot day (default `1`). This is the 80/20 cap: every non-quality day
   fills as easy Zone 2, never "moderate". Raise to `2` only for a dedicated
   build block.
+- `periodization` — race-taper behavior. Within `taper_weeks` of your race
+  (the earliest upcoming `RACE_A` event on your Intervals.icu calendar, or the
+  `race_date` fallback), strength drops to one shorter taper session per week
+  (`weight_training_taper`); in the final `taper_zero_weeks` week(s) strength
+  is skipped entirely. With no race set, no taper logic applies.
 - `load_targets` — planned TSS/duration/IF the planner attaches to each
   generated workout (so the calendar shows targets and Intervals.icu folds them
   into planned CTL). TSS = `(minutes / 60) * IF^2 * 100`. The latest easy ride
