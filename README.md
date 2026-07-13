@@ -1,8 +1,8 @@
 # workout-planner
 
-Weekly training planner for cyclists. Reads current form (CTL/ATL/TSB) from
-Intervals.icu and training recommendations from Xert, schedules a 7-day plan of
-cycling, sweet-spot intervals, weight training, and recovery, then
+Weekly training planner for cyclists. Reads current form (CTL/ATL/TSB), zone
+distribution, FTP, and HRV/resting-HR readiness from Intervals.icu, schedules a
+7-day plan of cycling, sweet-spot intervals, weight training, and recovery, then
 pushes the plan as events to the Intervals.icu calendar.
 
 ## Install
@@ -21,8 +21,6 @@ Credentials live in `.env`:
 | Variable            | What it is                                                              |
 | ------------------- | ----------------------------------------------------------------------- |
 | `INTERVALS_API_KEY` | Intervals.icu API key (Settings → API)                                  |
-| `XERT_USERNAME`     | Xert account email                                                      |
-| `XERT_PASSWORD`     | Xert account password (OAuth password grant)                            |
 | `HEVY_API_KEY`      | Hevy Pro API key, for strength logging (Settings → Developer); optional |
 
 Workout definitions and scheduling rules live in `config.yaml`:
@@ -49,8 +47,8 @@ Workout definitions and scheduling rules live in `config.yaml`:
 ## Commands
 
 ```sh
-npm run check                     # smoke-test Intervals.icu + Xert credentials
-npm run status                    # show current CTL/ATL/TSB and Xert metrics
+npm run check                     # smoke-test Intervals.icu credentials
+npm run status                    # show current CTL/ATL/TSB, FTP/eFTP, and readiness
 npm run status -- --json          # same data as JSON, including zone mix and ramp
 npm run plan -- --dry-run         # print the week's plan without pushing
 npm run plan                      # generate and push the plan to Intervals.icu
@@ -124,9 +122,8 @@ the Companion-synced one.
    Hevy lift detail into the matching Intervals.icu strength activities,
    creating the activity first when no watch recording produced one.
 
-It needs four repository secrets (Settings → Secrets and variables → Actions),
-mirroring `.env`: `INTERVALS_API_KEY`, `XERT_USERNAME`, `XERT_PASSWORD`,
-`HEVY_API_KEY`.
+It needs two repository secrets (Settings → Secrets and variables → Actions),
+mirroring `.env`: `INTERVALS_API_KEY` and `HEVY_API_KEY`.
 
 Run it on demand from the Actions tab (`workflow_dispatch`), optionally with
 **dry run** checked to preview without writing. To hand-tune a week instead,
@@ -174,6 +171,16 @@ shows them in the calendar and the Companion app:
 
 - **Sweet-spot sessions** are written as power steps (`88-94%`), so Intervals.icu
   computes **target watts** from your stored FTP.
+- **Hard interval rides** are built from the day's target zone (see [Zone
+  targeting](#zone-targeting)) as power steps off your stored FTP — a
+  self-constructed session per zone, no external workout-of-the-day:
+  - **VO2 Max** — 5×3 min @ 110–118% FTP
+  - **Threshold** — 4×8 min @ 95–102% FTP
+  - **Anaerobic** — 8×1 min @ 125–140% FTP
+
+  each with an easy warm-up (plus threshold openers) and cool-down. The event is
+  named for its zone (e.g. "VO2 Max Intervals").
+
 - **Easy and long endurance rides** are written with both a power target and an
   HR-zone target (`62% Z2 HR`): the **HR zone** shows the target bpm band from
   your stored HR zones, while the **power target** (set to the planned IF) is
@@ -182,12 +189,10 @@ shows them in the calendar and the Companion app:
   back to a broken ~33% estimate — the explicit power target avoids that.
 
 Quality work is paced by power and the aerobic base by heart rate — each
-derived from your own stored zones. Hard Xert
-workout-of-the-day rides (no fixed structure) and weight sessions (no power/HR
-model) keep their prose descriptions. The full coaching rationale for the
-sweet-spot session lives in `config.yaml` and `docs/`; the calendar event
-carries the executable structure plus short per-step labels. The builder lives
-in `src/workout.ts`.
+derived from your own stored zones. Weight sessions (no power/HR model) keep
+their prose descriptions. The full coaching rationale for the sweet-spot session
+lives in `config.yaml` and `docs/`; each calendar event carries the executable
+structure plus short per-step labels. The builder lives in `src/workout.ts`.
 
 ### FTP auto-sync (eFTP)
 
@@ -212,6 +217,56 @@ If the trailing 7-day CTL ramp exceeds `max_weekly_ramp_pct`, hard cycling
 targets are dropped and remaining hard fills are downgraded — the same
 philosophy as the TSB-driven downgrade, just driven by CTL ramp rate. The
 `plan` output prints a warning when this fires.
+
+### Readiness downgrade (HRV & resting HR)
+
+On top of TSB, the planner reads your **HRV and resting heart rate** trend from
+Intervals.icu wellness and, when they signal you're under-recovered, downgrades
+the week one fatigue tier (floored at "fatigued"). It compares a short recent
+window against a personal baseline and fires only on a clear drop:
+
+- recent HRV ≤ baseline mean − `readiness.hrv_drop_sd` standard deviations, or
+- recent resting HR ≥ baseline median + `readiness.rhr_rise_bpm` bpm.
+
+Like the ramp guard, it can only ever make the week **easier**, never harder —
+good HRV never adds intensity. It's tuned in the `readiness:` block of
+`config.yaml` (windows, thresholds, and an artifact guard that discards an
+implausibly high resting-HR reading before it can fake an alarm). Set
+`readiness.enabled: false` to plan on TSB alone. `npm run status` shows the
+current readiness state; a suppressed week is called out in the `plan` output.
+
+#### What Intervals.icu needs for readiness to work
+
+The planner reads two **daily wellness** fields from Intervals.icu:
+
+| Wellness field | What it is               | Drives                      |
+| -------------- | ------------------------ | --------------------------- |
+| `hrvSDNN`      | morning HRV (SDNN, ms)   | HRV-drop suppression        |
+| `restingHR`    | resting heart rate (bpm) | resting-HR-rise suppression |
+
+These are populated automatically when you connect a device/app that records a
+**morning HRV + resting-HR measurement** to Intervals.icu (Settings → your
+wellness/health-data connections). Any source Intervals.icu syncs wellness from
+works — e.g. **Oura, WHOOP, Garmin, Apple Health, Ultrahuman, Polar**, or a
+dedicated HRV app like **HRV4Training** or **EliteHRV**. You can also enter the
+two values by hand on the Intervals.icu wellness page. Recommendations:
+
+- **Measure consistently** — same time each morning (on waking), same method.
+  A device that captures overnight/on-wake HRV automatically (Oura, WHOOP,
+  Garmin, Ultrahuman) is the least-effort way to keep the stream unbroken.
+- **Build a baseline first** — readiness abstains ("n/a") until it has at least
+  `readiness.min_baseline_samples` readings (default **14**) in the
+  `readiness.baseline_days` window (default **28**), plus ≥2 in the recent
+  `readiness.recent_days` window (default **4**). Expect ~2–4 weeks of daily
+  readings before it starts acting.
+- **Keep `restingHR` clean** — let the wellness value come from your
+  morning/overnight measurement, not from a ride file. Intervals.icu can
+  overwrite a day's resting HR with a per-activity estimate; the artifact guard
+  (`readiness.rhr_artifact_bpm`) drops readings implausibly far above baseline,
+  but a consistent morning source avoids the problem entirely.
+
+If neither field has enough history, readiness simply abstains and the planner
+runs on TSB and CTL ramp as usual.
 
 ## Development
 

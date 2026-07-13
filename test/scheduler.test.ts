@@ -8,7 +8,7 @@ import {
   phaseWeightSessions,
   downgradeOneTier,
 } from "../src/scheduler.js";
-import { emptyDistribution } from "../src/zones.js";
+import { emptyDistribution, zoneLabel } from "../src/zones.js";
 import type { SchedulerInput, IntervalsEvent, Config, PlannedWorkout } from "../src/types.js";
 
 function isHardEntry(w: PlannedWorkout): boolean {
@@ -70,14 +70,6 @@ function makeInput(overrides: Partial<SchedulerInput> = {}): SchedulerInput {
     startDate: "2026-04-20",
     existingEvents: [],
     trainingLoad: { ctl: 50, atl: 45, tsb: 5 },
-    xertInfo: {
-      ftp: 250,
-      ltp: 210,
-      hie: 22,
-      pp: 1100,
-      training_status: "Fresh",
-      focus: "Endurance",
-    },
     config: BASE_CONFIG,
     ...overrides,
   };
@@ -610,6 +602,60 @@ describe("schedule", () => {
       expect(new Set(zones).size).toBe(zones.length);
     });
 
+    it("never targets sweet_spot on a hard-cycling day, even when it is the most deficient zone", () => {
+      // Distribution deficient in sweet-spot above everything else: threshold /
+      // vo2 / anaerobic are all over-represented, sweet_spot is empty. Without
+      // seeding usedHardZones, mostDeficientZone would hand sweet_spot to the
+      // hard-cycling phase and duplicate the dedicated sweet-spot session as a
+      // structurally identical "hard" ride. Raise the cap so a second hard day
+      // would surface any leak.
+      const dist = {
+        ...emptyDistribution(),
+        threshold: 0.35,
+        vo2: 0.35,
+        anaerobic: 0.3,
+        sweet_spot: 0,
+      };
+      const cfg: Config = {
+        ...BASE_CONFIG,
+        scheduling: { ...BASE_CONFIG.scheduling, hard_cycling_days: 2 },
+      };
+      const result = schedule(
+        makeInput({ trainingLoad: freshLoad, zoneDistribution: dist, config: cfg }),
+      );
+      const hardRides = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
+      expect(hardRides.length).toBeGreaterThan(0);
+      for (const ride of hardRides) {
+        expect(ride.targetZone).not.toBe("sweet_spot");
+      }
+      // And there is still exactly one sweet-spot session (the dedicated phase).
+      expect(result.filter((w) => w.type === "sweet_spot")).toHaveLength(1);
+    });
+
+    it("does not recycle sweet_spot once all hard zones are exhausted", () => {
+      // With hard_cycling_days at 4, the first three days use threshold/vo2/
+      // anaerobic and usedHardZones covers every hard zone. A 4th pick must not
+      // fall back to sweet_spot (the mostDeficientZone all-excluded case): the
+      // day stays an unstructured "Hard Ride" with no targetZone instead.
+      const dist = { ...emptyDistribution(), endurance: 1.0 };
+      const cfg: Config = {
+        ...BASE_CONFIG,
+        scheduling: { ...BASE_CONFIG.scheduling, hard_cycling_days: 4 },
+      };
+      const result = schedule(
+        makeInput({ trainingLoad: freshLoad, zoneDistribution: dist, config: cfg }),
+      );
+      const hardRides = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
+      for (const ride of hardRides) {
+        expect(ride.targetZone).not.toBe("sweet_spot");
+      }
+      // Still exactly one sweet-spot session, no structural duplicate.
+      expect(result.filter((w) => w.type === "sweet_spot")).toHaveLength(1);
+      // Any zone-exhausted hard day is left unstructured rather than duplicated.
+      const unzoned = hardRides.filter((w) => w.targetZone === undefined);
+      for (const ride of unzoned) expect(ride.name).toBe("Hard Ride");
+    });
+
     it("omits targetZone when no distribution is supplied (back-compat)", () => {
       const result = schedule(makeInput({ trainingLoad: freshLoad }));
       const hardRides = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
@@ -634,28 +680,27 @@ describe("schedule", () => {
     });
   });
 
-  it("uses wotd_name for hard rides when provided", () => {
+  it("names hard rides from the target zone", () => {
+    const dist = { ...emptyDistribution(), endurance: 1.0 };
     const result = schedule(
-      makeInput({
-        trainingLoad: { ctl: 50, atl: 40, tsb: 10 },
-        xertInfo: {
-          ftp: 250,
-          ltp: 210,
-          hie: 22,
-          pp: 1100,
-          training_status: "Fresh",
-          focus: "Endurance",
-          wotd_name: "SMART Workout 42",
-          wotd_description: "4x4min VO2max",
-        },
-      }),
+      makeInput({ trainingLoad: { ctl: 50, atl: 40, tsb: 10 }, zoneDistribution: dist }),
     );
     const hardRides = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
     expect(hardRides.length).toBeGreaterThan(0);
     for (const ride of hardRides) {
-      expect(ride.name).toBe("SMART Workout 42");
-      expect(ride.description).toContain("SMART Workout 42");
-      expect(ride.description).toContain("4x4min VO2max");
+      // Name reflects the chosen zone, e.g. "VO2 Max Intervals".
+      expect(ride.name).toMatch(/Intervals$/);
+      expect(ride.name).toContain(zoneLabel(ride.targetZone!));
+    }
+  });
+
+  it("falls back to 'Hard Ride' when no zone distribution is supplied", () => {
+    const result = schedule(makeInput({ trainingLoad: { ctl: 50, atl: 40, tsb: 10 } }));
+    const hardRides = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
+    expect(hardRides.length).toBeGreaterThan(0);
+    for (const ride of hardRides) {
+      expect(ride.name).toBe("Hard Ride");
+      expect(ride.description).toContain("Hard interval ride");
     }
   });
 

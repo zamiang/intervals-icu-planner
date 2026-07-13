@@ -6,6 +6,7 @@ import {
   mostDeficientZone,
   POLARIZED_TARGETS,
   zoneLabel,
+  type Zone,
 } from "../src/zones.js";
 import type { Activity } from "../src/types.js";
 
@@ -156,6 +157,14 @@ describe("mostDeficientZone", () => {
     const actual = { ...emptyDistribution(), threshold: 0.5, sweet_spot: 0.5 };
     const z = mostDeficientZone(actual);
     expect(["vo2", "anaerobic"]).toContain(z);
+  });
+
+  it("returns undefined when every hard zone is excluded, never a fallback zone", () => {
+    // The exclude contract must hold even when it covers all hard zones — a
+    // silent fallback to HARD_ZONES[0] (sweet_spot) would reintroduce the
+    // duplicate-session bug the exclude set prevents.
+    const used = new Set<Zone>(["sweet_spot", "threshold", "vo2", "anaerobic"]);
+    expect(mostDeficientZone(emptyDistribution(), POLARIZED_TARGETS, used)).toBeUndefined();
   });
 });
 

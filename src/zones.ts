@@ -104,12 +104,18 @@ export function computeDistribution(activities: Activity[]): Record<Zone, number
   return acc;
 }
 
+// Most under-target hard zone, skipping any in `exclude`. Returns undefined
+// when every hard zone is excluded — the caller must decide what a hard day
+// with no zone left to assign means. Crucially this never falls back to an
+// excluded zone: seeding `best` with HARD_ZONES[0] (sweet_spot) and returning it
+// unconditionally would hand back sweet_spot once all zones are used, silently
+// reintroducing the duplicate-sweet-spot session the exclude set exists to prevent.
 export function mostDeficientZone(
   actual: Record<Zone, number>,
   targets: Record<Zone, number> = POLARIZED_TARGETS,
   exclude: Set<Zone> = new Set(),
-): Zone {
-  let best: Zone = HARD_ZONES[0];
+): Zone | undefined {
+  let best: Zone | undefined;
   let bestDeficit = -Infinity;
   for (const z of HARD_ZONES) {
     if (exclude.has(z)) continue;

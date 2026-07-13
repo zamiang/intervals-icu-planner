@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { easyEnduranceWorkout, sweetSpotWorkout, structuredWorkoutFor } from "../src/workout.js";
+import {
+  easyEnduranceWorkout,
+  sweetSpotWorkout,
+  hardIntervalWorkout,
+  structuredWorkoutFor,
+} from "../src/workout.js";
 import type { PlannedWorkout } from "../src/types.js";
 
 describe("easyEnduranceWorkout", () => {
@@ -41,6 +46,35 @@ describe("sweetSpotWorkout", () => {
   });
 });
 
+describe("hardIntervalWorkout", () => {
+  it("builds a VO2 Max session with power targets off stored FTP", () => {
+    const w = hardIntervalWorkout("vo2");
+    expect(w.text).toContain("Main Set 5x");
+    expect(w.text).toContain("3m 110-118% VO2 Max");
+    expect(w.text).not.toContain("HR"); // power-targeted, not HR
+    // 12 warmup + 2x(0.5+0.5) openers + 5x(3+3) main + 8 cooldown = 52
+    expect(w.minutes).toBe(52);
+  });
+
+  it("builds a threshold session at 95-102% FTP", () => {
+    const w = hardIntervalWorkout("threshold");
+    expect(w.text).toContain("Main Set 4x");
+    expect(w.text).toContain("8m 95-102% Threshold");
+    expect(w.minutes).toBe(70); // 12 + 2 + 4x(8+4) + 8
+  });
+
+  it("builds an anaerobic session of short, very-high-power efforts", () => {
+    const w = hardIntervalWorkout("anaerobic");
+    expect(w.text).toContain("Main Set 8x");
+    expect(w.text).toContain("1m 125-140% Anaerobic");
+    expect(w.minutes).toBe(46); // 12 + 2 + 8x(1+2) + 8
+  });
+
+  it("falls back to the sweet-spot session for the sweet_spot zone", () => {
+    expect(hardIntervalWorkout("sweet_spot").text).toBe(sweetSpotWorkout().text);
+  });
+});
+
 const planned = (over: Partial<PlannedWorkout>): PlannedWorkout => ({
   date: "2026-06-22",
   type: "cycling",
@@ -72,7 +106,13 @@ describe("structuredWorkoutFor", () => {
     expect(structuredWorkoutFor(planned({ intensity: "easy", durationMin: 90 }))).toBeNull();
   });
 
-  it("returns null for hard Xert rides (no deterministic structure)", () => {
+  it("builds the target zone's interval session for a hard cycling ride", () => {
+    const s = structuredWorkoutFor(planned({ intensity: "hard", targetZone: "vo2" }));
+    expect(s?.text).toContain("Main Set 5x");
+    expect(s?.text).toContain("110-118% VO2 Max");
+  });
+
+  it("returns null for a hard ride with no target zone (no zone to build from)", () => {
     expect(structuredWorkoutFor(planned({ intensity: "hard", durationMin: 75 }))).toBeNull();
   });
 

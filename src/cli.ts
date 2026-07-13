@@ -2,7 +2,6 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ quiet: true });
 import { loadConfig } from "./config.js";
 import { IntervalsClient } from "./intervals.js";
-import { XertClient } from "./xert.js";
 import { schedule, classifyFatigue, effectiveFatigue, rampGuardTriggered } from "./scheduler.js";
 import { computeReadiness, type ReadinessSignal } from "./readiness.js";
 import { todayLocal, addLocalDays } from "./dates.js";
@@ -56,12 +55,18 @@ export function computeWeeklyRampPct(range: WellnessEntry[]): number | undefined
   return ((newest.ctl - oldest.ctl) / oldest.ctl) * 100;
 }
 
-// Most recent wellness entry with a populated CTL. Intervals.icu may return
-// today's entry with CTL 0 before activities sync, so reading a single day can
-// silently report zero fitness — fall back to the last day that actually has data.
-export function latestTrainingLoad(range: WellnessEntry[]): TrainingLoad {
+// Training load for planning decisions. Intervals.icu recomputes *today's*
+// wellness entry throughout the day as activities and planned loads sync, so its
+// CTL/ATL/TSB jitter until the day settles — reading it can flip the fatigue
+// tier (e.g. across tsb_fresh) on sync timing alone, not on any real change.
+// Prefer the most recent *fully-settled* day (strictly before `today`) so the
+// tier decision is stable across the sync window. Fall back to today's
+// provisional entry only when no earlier day has populated data (new athlete or
+// a sync gap), and to zeros when nothing is populated at all.
+export function latestTrainingLoad(range: WellnessEntry[], today: string): TrainingLoad {
   const populated = range.filter((e) => e.ctl > 0).sort((a, b) => a.date.localeCompare(b.date));
-  const pick = populated[populated.length - 1];
+  const settled = populated.filter((e) => e.date < today);
+  const pick = settled[settled.length - 1] ?? populated[populated.length - 1];
   if (!pick) return { ctl: 0, atl: 0, tsb: 0 };
   return { ctl: pick.ctl, atl: pick.atl, tsb: pick.tsb };
 }
@@ -213,7 +218,7 @@ export async function pushPlan(
   return { created, failed };
 }
 
-async function runCheck(intervals: IntervalsClient, xert: XertClient): Promise<number> {
+async function runCheck(intervals: IntervalsClient): Promise<number> {
   const today = todayLocal();
   let failures = 0;
   const step = async (label: string, fn: () => Promise<unknown>): Promise<void> => {
@@ -229,8 +234,7 @@ async function runCheck(intervals: IntervalsClient, xert: XertClient): Promise<n
 
   console.log("=== Pre-flight check ===");
   await step("Intervals.icu wellness fetch", () => intervals.getTrainingLoad(today));
-  await step("Xert authenticate", () => xert.authenticate());
-  await step("Xert training_info", () => xert.getTrainingInfo());
+  await step("Intervals.icu ride sport-settings", () => intervals.getRideSportSettings());
   console.log(failures === 0 ? "All checks passed." : `${failures} check(s) failed.`);
   return failures === 0 ? 0 : 1;
 }
@@ -240,21 +244,17 @@ async function main() {
   const { command, dryRun, json } = parseArgs(rawArgs);
 
   const intervalsKey = requireEnv("INTERVALS_API_KEY");
-  const xertUser = requireEnv("XERT_USERNAME");
-  const xertPass = requireEnv("XERT_PASSWORD");
 
   const intervals = new IntervalsClient(intervalsKey);
-  const xert = new XertClient(xertUser, xertPass);
 
   if (command === "check") {
-    const code = await runCheck(intervals, xert);
+    const code = await runCheck(intervals);
     process.exit(code);
   }
 
   const config = await loadConfig("config.yaml");
 
   if (command === "status") {
-    await xert.authenticate();
     const today = todayLocal();
     const lookbackStr = addLocalDays(today, -28);
     const weekAgoStr = addLocalDays(today, -7);
@@ -265,15 +265,14 @@ async function main() {
       -(config.readiness.baseline_days + config.readiness.recent_days),
     );
 
-    const [info, activities, wellnessRange, rideSettings] = await Promise.all([
-      xert.getTrainingInfo(),
+    const [activities, wellnessRange, rideSettings] = await Promise.all([
       intervals.getActivities(lookbackStr, today),
       intervals.getTrainingLoadRange(wellnessStr, today),
       intervals.getRideSportSettings(),
     ]);
     const ftp = rideSettings?.ftp ?? null;
     const eftp = latestEftp(activities);
-    const load = latestTrainingLoad(wellnessRange);
+    const load = latestTrainingLoad(wellnessRange, today);
     const distribution = computeDistribution(activities);
     const rampRatePct = computeWeeklyRampPct(wellnessRange.filter((e) => e.date >= weekAgoStr));
     const readiness = computeReadiness(wellnessRange, config);
@@ -287,7 +286,6 @@ async function main() {
         icu_ftp: ftp,
         icu_eftp: eftp ?? null,
         readiness,
-        xert: info,
         zones: { distribution, targets: POLARIZED_TARGETS, deficits },
         ramp: {
           weekly_pct: rampRatePct ?? null,
@@ -309,16 +307,10 @@ async function main() {
     console.log(
       `eFTP:   ${eftp !== undefined ? `${Math.round(eftp)}W` : "n/a"}  (rolling estimate${config.ftp_sync.enabled ? "; plan auto-applies" : ""})`,
     );
-    console.log(`LTP:    ${info.ltp}W`);
-    console.log(`HIE:    ${info.hie} kJ`);
-    console.log(`PP:     ${info.pp}W`);
-    console.log(`Status: ${info.training_status}`);
-    console.log(`Focus:  ${info.focus}`);
     return;
   }
 
   // plan command
-  await xert.authenticate();
   const today = todayLocal();
   const endStr = addLocalDays(today, 6);
   const raceHorizonStr = addLocalDays(today, 364);
@@ -340,15 +332,14 @@ async function main() {
     -Math.max(1, config.scheduling.min_weight_gap_days - 1),
   );
 
-  const [events, info, activities, wellnessRange, raceEvents, rideSettings] = await Promise.all([
+  const [events, activities, wellnessRange, raceEvents, rideSettings] = await Promise.all([
     intervals.getEvents(eventLookbackStr, endStr),
-    xert.getTrainingInfo(),
     intervals.getActivities(lookbackStr, today),
     intervals.getTrainingLoadRange(wellnessStr, today),
     intervals.getEvents(today, raceHorizonStr),
     intervals.getRideSportSettings(),
   ]);
-  const load = latestTrainingLoad(wellnessRange);
+  const load = latestTrainingLoad(wellnessRange, today);
 
   // eFTP sync before planning: the applied FTP is what Intervals.icu will
   // resolve this week's `% FTP` steps against, and what prose watt/HR
@@ -379,7 +370,6 @@ async function main() {
     startDate: today,
     existingEvents: events,
     trainingLoad: load,
-    xertInfo: info,
     config,
     zoneDistribution,
     rampRatePct,
@@ -399,9 +389,7 @@ async function main() {
   };
 
   console.log("=== Weekly Plan ===");
-  console.log(
-    `TSB ${load.tsb.toFixed(1)} (${fatigueLabel[fatigue] ?? fatigue}) — Xert: ${info.training_status || "n/a"}`,
-  );
+  console.log(`TSB ${load.tsb.toFixed(1)} (${fatigueLabel[fatigue] ?? fatigue})`);
   if (readiness.status === "suppressed") {
     console.log(`READINESS: ${readiness.reason} — week downgraded one fatigue tier`);
   }

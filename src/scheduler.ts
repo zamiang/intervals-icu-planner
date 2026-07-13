@@ -5,7 +5,6 @@ import type {
   CyclingIntensity,
   Config,
   IntervalsEvent,
-  XertTrainingInfo,
 } from "./types.js";
 import { mostDeficientZone, zoneLabel, type Zone } from "./zones.js";
 import type { ReadinessSignal } from "./readiness.js";
@@ -107,7 +106,7 @@ export type ExistingEventKind = "weights" | "sweet_spot" | "hard_cycling" | "eas
 // Classify an existing calendar event so locked days participate in the
 // scheduler's constraints instead of being invisible. Name patterns cover
 // planner-written events and hand-added ones; planned IF is the fallback for
-// arbitrary names (e.g. Xert workout-of-the-day titles).
+// arbitrary names (e.g. a hand-added or third-party workout title).
 export function classifyExistingEvent(e: IntervalsEvent): ExistingEventKind {
   if (e.category === "NOTE") return "other"; // rest-day notes carry no training stress
   if (e.category?.startsWith("RACE")) return "hard_cycling";
@@ -127,21 +126,20 @@ export function classifyExistingEvent(e: IntervalsEvent): ExistingEventKind {
   return "other";
 }
 
-function buildCyclingDescription(
-  intensity: CyclingIntensity,
-  xert: XertTrainingInfo,
-  targetZone?: Zone,
-): string {
+// The planner only ever fills cycling days as "easy" or "hard" (the ~80/20
+// split deliberately avoids "moderate" grey-zone rides), so this handles just
+// those two.
+function buildCyclingDescription(intensity: "easy" | "hard", targetZone?: Zone): string {
   const zoneSuffix = targetZone ? ` — target zone: ${zoneLabel(targetZone)}` : "";
   switch (intensity) {
     case "easy":
       return "Easy ride — Zone 2 recovery spin";
-    case "moderate":
-      return `Moderate ride — Xert focus: ${xert.focus}${zoneSuffix}`;
     case "hard":
-      return xert.wotd_name
-        ? `${xert.wotd_name} — ${xert.wotd_description ?? xert.focus}${zoneSuffix}`
-        : `Hard ride — Xert focus: ${xert.focus}${zoneSuffix}`;
+      // Prose fallback only — hard cycling days render as a structured
+      // interval session (src/workout.ts) whenever a targetZone is set, which
+      // is the case on the plan path. This text surfaces just when no zone is
+      // available (no distribution supplied), so keep it self-contained.
+      return `Hard interval ride${zoneSuffix}`;
   }
 }
 
@@ -162,7 +160,6 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     startDate,
     existingEvents,
     trainingLoad,
-    xertInfo,
     config,
     zoneDistribution,
     rampRatePct,
@@ -175,11 +172,19 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
 
   // Track zones already assigned to hard rides this week so consecutive hard
   // days target different zones (highest deficit first, then second-highest).
-  const usedHardZones = new Set<Zone>();
+  // Seed with "sweet_spot" so hard-cycling days never target it: the dedicated
+  // sweet-spot session (Phase 1) already covers that zone, and without this
+  // mostDeficientZone can hand sweet_spot back to Phase 2 — producing a second,
+  // structurally identical sweet-spot workout the same week. Hard-cycling days
+  // are for the short-interval zones (threshold / VO2 / anaerobic).
+  const usedHardZones = new Set<Zone>(["sweet_spot"]);
   const pickHardZone = (): Zone | undefined => {
     if (!zoneDistribution) return undefined;
+    // Undefined once every hard zone is used (e.g. a 4th hard-cycling day after
+    // threshold/vo2/anaerobic are taken): the day stays an unstructured "Hard
+    // Ride" rather than duplicating a session, and never recycles sweet_spot.
     const z = mostDeficientZone(zoneDistribution, undefined, usedHardZones);
-    usedHardZones.add(z);
+    if (z) usedHardZones.add(z);
     return z;
   };
 
@@ -323,8 +328,8 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
       plan[i].push({
         date: dates[i],
         type: "cycling",
-        name: xertInfo.wotd_name ?? "Hard Ride",
-        description: buildCyclingDescription("hard", xertInfo, targetZone),
+        name: targetZone ? `${zoneLabel(targetZone)} Intervals` : "Hard Ride",
+        description: buildCyclingDescription("hard", targetZone),
         intensity: "hard",
         ...(targetZone ? { targetZone } : {}),
       });
@@ -404,7 +409,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
       date: dates[i],
       type: "cycling",
       name: "Easy Ride",
-      description: buildCyclingDescription("easy", xertInfo),
+      description: buildCyclingDescription("easy"),
       intensity: "easy",
     });
   }

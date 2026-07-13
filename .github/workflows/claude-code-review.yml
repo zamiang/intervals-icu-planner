@@ -29,7 +29,7 @@ jobs:
             - Logic bugs in the scheduling algorithm (src/scheduler.ts), including
               edge cases when days are locked, when slots are insufficient, and
               at TSB classification boundaries.
-            - Correctness of Intervals.icu and Xert API calls — request shape,
+            - Correctness of Intervals.icu API calls — request shape,
               response parsing, error handling, and auth header construction.
             - TypeScript safety: any/unknown casts that bypass checking,
               non-exhaustive switches over WorkoutType, and runtime-only

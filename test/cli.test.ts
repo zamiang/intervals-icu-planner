@@ -303,17 +303,17 @@ describe("workoutToEvent", () => {
     expect(event.icu_training_load).toBe(Math.round((75 / 60) * 0.63 ** 2 * 100));
   });
 
-  it("leaves hard Xert rides as prose (no deterministic structure)", () => {
+  it("leaves a hard ride with no target zone as prose (no deterministic structure)", () => {
     const event = workoutToEvent({
       date: "2026-04-20",
       type: "cycling",
-      name: "VO2 Max Intervals",
-      description: "Xert workout of the day",
+      name: "Hard Ride",
+      description: "Hard interval ride",
       intensity: "hard",
       durationMin: 75,
       intensityFactor: 0.88,
     });
-    expect(event.description).toBe("Xert workout of the day");
+    expect(event.description).toBe("Hard interval ride");
   });
 });
 
@@ -352,17 +352,34 @@ describe("weeksUntil", () => {
 });
 
 describe("latestTrainingLoad", () => {
-  it("picks the most recent entry with a populated CTL", () => {
+  it("picks the most recent settled day before today, skipping an unpopulated today", () => {
     const range: WellnessEntry[] = [
       { date: "2026-06-07", ctl: 55, atl: 60, tsb: -5 },
       { date: "2026-06-08", ctl: 56, atl: 58, tsb: -2 },
       { date: "2026-06-09", ctl: 0, atl: 0, tsb: 0 }, // today, not computed yet
     ];
-    expect(latestTrainingLoad(range)).toEqual({ ctl: 56, atl: 58, tsb: -2 });
+    expect(latestTrainingLoad(range, "2026-06-09")).toEqual({ ctl: 56, atl: 58, tsb: -2 });
+  });
+
+  it("ignores today's provisional entry even when populated (stable across sync)", () => {
+    // Today has a populated but still-settling entry; yesterday is the stable
+    // read the fatigue tier should be based on.
+    const range: WellnessEntry[] = [
+      { date: "2026-06-08", ctl: 52, atl: 45, tsb: 7 },
+      { date: "2026-06-09", ctl: 51, atl: 48, tsb: 3 }, // today, mid-sync jitter
+    ];
+    expect(latestTrainingLoad(range, "2026-06-09")).toEqual({ ctl: 52, atl: 45, tsb: 7 });
+  });
+
+  it("falls back to today's entry when no earlier day has data (sync gap / new athlete)", () => {
+    const range: WellnessEntry[] = [{ date: "2026-06-09", ctl: 51, atl: 48, tsb: 3 }];
+    expect(latestTrainingLoad(range, "2026-06-09")).toEqual({ ctl: 51, atl: 48, tsb: 3 });
   });
 
   it("returns zeros when nothing is populated", () => {
-    expect(latestTrainingLoad([{ date: "2026-06-09", ctl: 0, atl: 0, tsb: 0 }])).toEqual({
+    expect(
+      latestTrainingLoad([{ date: "2026-06-09", ctl: 0, atl: 0, tsb: 0 }], "2026-06-09"),
+    ).toEqual({
       ctl: 0,
       atl: 0,
       tsb: 0,
@@ -370,7 +387,7 @@ describe("latestTrainingLoad", () => {
   });
 
   it("returns zeros for an empty range", () => {
-    expect(latestTrainingLoad([])).toEqual({ ctl: 0, atl: 0, tsb: 0 });
+    expect(latestTrainingLoad([], "2026-06-09")).toEqual({ ctl: 0, atl: 0, tsb: 0 });
   });
 });
 
