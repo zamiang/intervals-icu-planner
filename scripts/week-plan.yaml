@@ -1,4 +1,5 @@
-# Editable weekly plan for scripts/push-week.ts.
+# Editable weekly plan for scripts/push-week.ts — use this when you want to
+# hand-tune a week instead of running the generator (`npm run plan`).
 #
 # Each session has a `day` (Mon..Sun, or a 0-6 offset from the anchor Monday)
 # and either:
@@ -10,24 +11,16 @@
 #   npm run push-week -- --start 2026-07-06
 # Preview without writing to Intervals.icu with --dry-run. Days that already
 # have a calendar event are skipped so re-running never duplicates.
+#
+# Watts/HR in descriptions render at push time from live Intervals.icu
+# FTP/LTHR via the {ftp}/{lthr}/{w:NN}/{hr:NN} placeholders (see ftp_sync in
+# config.yaml) — never hardcode watts here.
 
-# Week of 2026-07-06 — RE-ENTRY after a fully-off vacation week.
-# Rationale: back from a layoff with TSB +27 and Xert flagging "Detraining"
-# (CTL down to ~52). That freshness is de-training, not taper freshness, so we
-# deliberately DROP the VO2 Max ride the generator wanted to stack on day 0 —
-# connective tissue is least ready right after time off, even when the legs feel
-# great. The week is one moderate quality dose (Wed sweet-spot) surrounded by
-# easy Z2 base, rebuilding volume before intensity resumes next week. This is
-# hand-tuned rather than `npm run plan` because the generator reads the fresh
-# TSB as license for hard rides.
-# Watts/HR render at push time from live Intervals.icu FTP/LTHR via the
-# {ftp}/{lthr}/{w:NN}/{hr:NN} placeholders (see ftp_sync in config.yaml).
+# Example week: one sweet-spot quality day, two strength sessions stacked onto
+# ride days, a rest day, easy Zone 2 base everywhere else, and a long
+# endurance ride to close the week. Edit to taste.
 
 sessions:
-  # Day 0 — ease back in: easy Z2 ride + strength, stacked. LIFT FIRST while
-  # fully fresh (protects form/tendons after the layoff), then the easy spin
-  # doubles as an active-recovery flush that isn't compromised by the lifting.
-  # First session back on the bar: ramp the loads back, don't chase a 4x5 PR.
   - day: Mon
     name: Easy Z2 Ride
     type: Ride
@@ -36,19 +29,13 @@ sessions:
     intensity: 0.62
     description: >
       Easy Zone 2, ~75 min, conversational (~{w:62}W at {ftp}W FTP, HR under
-      ~{hr:83} / 83% LTHR {lthr}). First ride back — keep it strictly aerobic,
-      no surges, no hills hammered. Do this AFTER the strength session as a
-      flush spin.
+      ~{hr:83} / 83% LTHR {lthr}). Pure aerobic base — no surges.
 
   - day: Mon
     workout: weight_training
 
-  # Tue intentionally empty — rest day. Sleep, walk, fuel; let the first day
-  # back settle before the mid-week quality dose.
+  # Tue intentionally empty — rest day.
 
-  # Mid-week quality — the single hard session of the re-entry week. Structured
-  # sweet-spot pulled from config (3 x 12 min). Don't extend the reps this week;
-  # just re-touch the intensity on legs that haven't seen it in a week+.
   - day: Wed
     workout: sweet_spot
     intensity: 0.88
@@ -56,8 +43,6 @@ sessions:
   - day: Wed
     workout: weight_training
 
-  # Thu/Fri/Sat — easy Z2 base. Rebuilding the aerobic volume the layoff cost,
-  # concentrating all stress into Wed's dose and keeping ~80/20 low-intensity.
   - day: Thu
     name: Easy Z2 Ride
     type: Ride
@@ -88,9 +73,7 @@ sessions:
       Easy Zone 2, ~75 min, conversational (~{w:62}W at {ftp}W FTP, HR under
       ~{hr:83}). Pure aerobic base — keep it boring and steady.
 
-  # Durability anchor — long aerobic to close the week and start rebuilding the
-  # century base. Strictly Z2; if the legs feel flat from the layoff, cut it
-  # short rather than pushing intensity to compensate.
+  # Durability anchor — long aerobic ride to close the week.
   - day: Sun
     name: Long Endurance Ride
     type: Ride
@@ -99,6 +82,5 @@ sessions:
     intensity: 0.62
     description: >
       Long Z2 endurance, ~3h. Strictly aerobic (~{w:62}W at {ftp}W FTP, HR
-      under ~{hr:83}). Practice century fueling: 60-90 g carb/hr from the first 30 min.
-      Durability over intensity — keep it steady to the end. First long ride
-      back, so it's fine to trim to ~2h30 if you're fading.
+      under ~{hr:83}). Practice event fueling: 60-90 g carb/hr from the first
+      30 min. Durability over intensity — keep it steady to the end.
