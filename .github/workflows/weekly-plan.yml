@@ -59,14 +59,10 @@ jobs:
         run: npm run status
         env:
           INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
-          XERT_USERNAME: ${{ secrets.XERT_USERNAME }}
-          XERT_PASSWORD: ${{ secrets.XERT_PASSWORD }}
 
       - name: Generate and push weekly plan
         env:
           INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
-          XERT_USERNAME: ${{ secrets.XERT_USERNAME }}
-          XERT_PASSWORD: ${{ secrets.XERT_PASSWORD }}
           DRY_RUN: ${{ inputs.dry_run == true }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then

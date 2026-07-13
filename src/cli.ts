@@ -2,7 +2,6 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ quiet: true });
 import { loadConfig } from "./config.js";
 import { IntervalsClient } from "./intervals.js";
-import { XertClient } from "./xert.js";
 import { schedule, classifyFatigue, effectiveFatigue, rampGuardTriggered } from "./scheduler.js";
 import { computeReadiness, type ReadinessSignal } from "./readiness.js";
 import { todayLocal, addLocalDays } from "./dates.js";
@@ -219,7 +218,7 @@ export async function pushPlan(
   return { created, failed };
 }
 
-async function runCheck(intervals: IntervalsClient, xert: XertClient): Promise<number> {
+async function runCheck(intervals: IntervalsClient): Promise<number> {
   const today = todayLocal();
   let failures = 0;
   const step = async (label: string, fn: () => Promise<unknown>): Promise<void> => {
@@ -235,8 +234,7 @@ async function runCheck(intervals: IntervalsClient, xert: XertClient): Promise<n
 
   console.log("=== Pre-flight check ===");
   await step("Intervals.icu wellness fetch", () => intervals.getTrainingLoad(today));
-  await step("Xert authenticate", () => xert.authenticate());
-  await step("Xert training_info", () => xert.getTrainingInfo());
+  await step("Intervals.icu ride sport-settings", () => intervals.getRideSportSettings());
   console.log(failures === 0 ? "All checks passed." : `${failures} check(s) failed.`);
   return failures === 0 ? 0 : 1;
 }
@@ -246,21 +244,17 @@ async function main() {
   const { command, dryRun, json } = parseArgs(rawArgs);
 
   const intervalsKey = requireEnv("INTERVALS_API_KEY");
-  const xertUser = requireEnv("XERT_USERNAME");
-  const xertPass = requireEnv("XERT_PASSWORD");
 
   const intervals = new IntervalsClient(intervalsKey);
-  const xert = new XertClient(xertUser, xertPass);
 
   if (command === "check") {
-    const code = await runCheck(intervals, xert);
+    const code = await runCheck(intervals);
     process.exit(code);
   }
 
   const config = await loadConfig("config.yaml");
 
   if (command === "status") {
-    await xert.authenticate();
     const today = todayLocal();
     const lookbackStr = addLocalDays(today, -28);
     const weekAgoStr = addLocalDays(today, -7);
@@ -271,8 +265,7 @@ async function main() {
       -(config.readiness.baseline_days + config.readiness.recent_days),
     );
 
-    const [info, activities, wellnessRange, rideSettings] = await Promise.all([
-      xert.getTrainingInfo(),
+    const [activities, wellnessRange, rideSettings] = await Promise.all([
       intervals.getActivities(lookbackStr, today),
       intervals.getTrainingLoadRange(wellnessStr, today),
       intervals.getRideSportSettings(),
@@ -293,7 +286,6 @@ async function main() {
         icu_ftp: ftp,
         icu_eftp: eftp ?? null,
         readiness,
-        xert: info,
         zones: { distribution, targets: POLARIZED_TARGETS, deficits },
         ramp: {
           weekly_pct: rampRatePct ?? null,
@@ -315,16 +307,10 @@ async function main() {
     console.log(
       `eFTP:   ${eftp !== undefined ? `${Math.round(eftp)}W` : "n/a"}  (rolling estimate${config.ftp_sync.enabled ? "; plan auto-applies" : ""})`,
     );
-    console.log(`LTP:    ${info.ltp}W`);
-    console.log(`HIE:    ${info.hie} kJ`);
-    console.log(`PP:     ${info.pp}W`);
-    console.log(`Status: ${info.training_status}`);
-    console.log(`Focus:  ${info.focus}`);
     return;
   }
 
   // plan command
-  await xert.authenticate();
   const today = todayLocal();
   const endStr = addLocalDays(today, 6);
   const raceHorizonStr = addLocalDays(today, 364);
@@ -346,9 +332,8 @@ async function main() {
     -Math.max(1, config.scheduling.min_weight_gap_days - 1),
   );
 
-  const [events, info, activities, wellnessRange, raceEvents, rideSettings] = await Promise.all([
+  const [events, activities, wellnessRange, raceEvents, rideSettings] = await Promise.all([
     intervals.getEvents(eventLookbackStr, endStr),
-    xert.getTrainingInfo(),
     intervals.getActivities(lookbackStr, today),
     intervals.getTrainingLoadRange(wellnessStr, today),
     intervals.getEvents(today, raceHorizonStr),
@@ -385,7 +370,6 @@ async function main() {
     startDate: today,
     existingEvents: events,
     trainingLoad: load,
-    xertInfo: info,
     config,
     zoneDistribution,
     rampRatePct,
@@ -405,9 +389,7 @@ async function main() {
   };
 
   console.log("=== Weekly Plan ===");
-  console.log(
-    `TSB ${load.tsb.toFixed(1)} (${fatigueLabel[fatigue] ?? fatigue}) — Xert: ${info.training_status || "n/a"}`,
-  );
+  console.log(`TSB ${load.tsb.toFixed(1)} (${fatigueLabel[fatigue] ?? fatigue})`);
   if (readiness.status === "suppressed") {
     console.log(`READINESS: ${readiness.reason} — week downgraded one fatigue tier`);
   }

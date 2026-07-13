@@ -70,14 +70,6 @@ function makeInput(overrides: Partial<SchedulerInput> = {}): SchedulerInput {
     startDate: "2026-04-20",
     existingEvents: [],
     trainingLoad: { ctl: 50, atl: 45, tsb: 5 },
-    xertInfo: {
-      ftp: 250,
-      ltp: 210,
-      hie: 22,
-      pp: 1100,
-      training_status: "Fresh",
-      focus: "Endurance",
-    },
     config: BASE_CONFIG,
     ...overrides,
   };

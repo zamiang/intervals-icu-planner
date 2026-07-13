@@ -112,17 +112,6 @@ export interface Activity {
   icu_rolling_ftp?: number | null; // Intervals.icu's rolling eFTP estimate as of this activity; source for ftp_sync
 }
 
-// --- Xert ---
-
-export interface XertTrainingInfo {
-  ftp: number;
-  ltp: number;
-  hie: number;
-  pp: number; // peak power
-  training_status: string;
-  focus: string; // recommended focus type
-}
-
 // --- Scheduler ---
 
 export type WorkoutType = "cycling" | "sweet_spot" | "weights" | "rest";
@@ -146,7 +135,6 @@ export interface SchedulerInput {
   startDate: string; // YYYY-MM-DD, first day of planning window
   existingEvents: IntervalsEvent[];
   trainingLoad: TrainingLoad;
-  xertInfo: XertTrainingInfo;
   config: Config;
   zoneDistribution?: Record<Zone, number>; // trailing TSS-weighted zone mix
   rampRatePct?: number; // trailing-week CTL ramp; triggers guard above threshold

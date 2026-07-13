@@ -303,17 +303,17 @@ describe("workoutToEvent", () => {
     expect(event.icu_training_load).toBe(Math.round((75 / 60) * 0.63 ** 2 * 100));
   });
 
-  it("leaves hard Xert rides as prose (no deterministic structure)", () => {
+  it("leaves a hard ride with no target zone as prose (no deterministic structure)", () => {
     const event = workoutToEvent({
       date: "2026-04-20",
       type: "cycling",
-      name: "VO2 Max Intervals",
-      description: "Xert workout of the day",
+      name: "Hard Ride",
+      description: "Hard interval ride",
       intensity: "hard",
       durationMin: 75,
       intensityFactor: 0.88,
     });
-    expect(event.description).toBe("Xert workout of the day");
+    expect(event.description).toBe("Hard interval ride");
   });
 });
 

@@ -5,7 +5,6 @@ import type {
   CyclingIntensity,
   Config,
   IntervalsEvent,
-  XertTrainingInfo,
 } from "./types.js";
 import { mostDeficientZone, zoneLabel, type Zone } from "./zones.js";
 import type { ReadinessSignal } from "./readiness.js";
@@ -107,7 +106,7 @@ export type ExistingEventKind = "weights" | "sweet_spot" | "hard_cycling" | "eas
 // Classify an existing calendar event so locked days participate in the
 // scheduler's constraints instead of being invisible. Name patterns cover
 // planner-written events and hand-added ones; planned IF is the fallback for
-// arbitrary names (e.g. Xert workout-of-the-day titles).
+// arbitrary names (e.g. a hand-added or third-party workout title).
 export function classifyExistingEvent(e: IntervalsEvent): ExistingEventKind {
   if (e.category === "NOTE") return "other"; // rest-day notes carry no training stress
   if (e.category?.startsWith("RACE")) return "hard_cycling";
@@ -127,17 +126,14 @@ export function classifyExistingEvent(e: IntervalsEvent): ExistingEventKind {
   return "other";
 }
 
-function buildCyclingDescription(
-  intensity: CyclingIntensity,
-  xert: XertTrainingInfo,
-  targetZone?: Zone,
-): string {
+// The planner only ever fills cycling days as "easy" or "hard" (the ~80/20
+// split deliberately avoids "moderate" grey-zone rides), so this handles just
+// those two.
+function buildCyclingDescription(intensity: "easy" | "hard", targetZone?: Zone): string {
   const zoneSuffix = targetZone ? ` — target zone: ${zoneLabel(targetZone)}` : "";
   switch (intensity) {
     case "easy":
       return "Easy ride — Zone 2 recovery spin";
-    case "moderate":
-      return `Moderate ride — Xert focus: ${xert.focus}${zoneSuffix}`;
     case "hard":
       // Prose fallback only — hard cycling days render as a structured
       // interval session (src/workout.ts) whenever a targetZone is set, which
@@ -164,7 +160,6 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     startDate,
     existingEvents,
     trainingLoad,
-    xertInfo,
     config,
     zoneDistribution,
     rampRatePct,
@@ -334,7 +329,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
         date: dates[i],
         type: "cycling",
         name: targetZone ? `${zoneLabel(targetZone)} Intervals` : "Hard Ride",
-        description: buildCyclingDescription("hard", xertInfo, targetZone),
+        description: buildCyclingDescription("hard", targetZone),
         intensity: "hard",
         ...(targetZone ? { targetZone } : {}),
       });
@@ -414,7 +409,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
       date: dates[i],
       type: "cycling",
       name: "Easy Ride",
-      description: buildCyclingDescription("easy", xertInfo),
+      description: buildCyclingDescription("easy"),
       intensity: "easy",
     });
   }
