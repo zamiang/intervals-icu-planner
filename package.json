@@ -4,6 +4,12 @@
   "description": "Weekly training planner — cycling + weights → Intervals.icu calendar",
   "type": "module",
   "private": true,
+  "license": "MIT",
+  "author": "Brennan Moore",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zamiang/intervals-icu-cycling-strength-workout-planner.git"
+  },
   "scripts": {
     "plan": "tsx src/cli.ts plan",
     "status": "tsx src/cli.ts status",

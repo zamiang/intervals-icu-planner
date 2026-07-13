@@ -146,7 +146,7 @@ For each 7-day window, starting from today:
    interval rides (placed only when TSB is fresh and the ramp guard is off);
    every other day fills as easy Zone 2. This holds the ~80/20 low-intensity
    majority the training-science evidence calls for — the planner never
-   schedules "moderate" grey-zone fills. See `docs/cycling-training-report.md`.
+   schedules "moderate" grey-zone fills.
 
 Weight and sweet-spot days are always classified as "hard" for the
 back-to-back constraint.
@@ -191,7 +191,7 @@ shows them in the calendar and the Companion app:
 Quality work is paced by power and the aerobic base by heart rate — each
 derived from your own stored zones. Weight sessions (no power/HR model) keep
 their prose descriptions. The full coaching rationale for the sweet-spot session
-lives in `config.yaml` and `docs/`; each calendar event carries the executable
+lives in `config.yaml`; each calendar event carries the executable
 structure plus short per-step labels. The builder lives in `src/workout.ts`.
 
 ### FTP auto-sync (eFTP)
@@ -278,10 +278,17 @@ npm run format      # prettier --write
 ```
 
 CI (`.github/workflows/ci.yml`) runs format check, lint, typecheck, and tests
-on push and PR to `main`.
+on push and PR to `main`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full
+contribution workflow.
 
-## Docs
+## Disclaimer
 
-- [`docs/cycling-training-report.md`](docs/cycling-training-report.md) — the
-  training-science rationale behind the planner's 80/20 polarization, zone
-  targeting, and strength prescription, with citations.
+This is a training-planning tool, not medical or coaching advice. The
+scheduling rules encode published training-science findings (80/20 intensity
+distribution, heavy strength work for cyclists, readiness-based load
+management), but you know your body and history — adjust the config to suit,
+and consult a professional where appropriate.
+
+## License
+
+[MIT](LICENSE)

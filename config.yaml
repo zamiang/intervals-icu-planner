@@ -10,21 +10,15 @@ weight_training:
     Block 1: Heavy Strength (30 min) — the part that actually moves your power.
     Lift heavy, low reps, and rest 2-3 min between sets. These are loadable on
     purpose so you can progress over time.
-    1. Harambe Belt Squat (dip belt + rope/rod) — 4x5-6 @ heavy
-       The single highest-yield lift for cycling power, loaded through the hips
-       with no spinal compression. 37-inch band doubled under the CyberPlate,
-       rope set taut at the bottom of the squat. Work the Green, Gray, and
-       Yellow bands; progress by shortening the rope (~1 inch ≈ 10-16 lb), then
-       move up a band at full reps. Drive through mid-foot, full depth, brace
-       the core. This bilateral squat is the anchor of the day. Log band + rope
-       setting (e.g. 37 Gray -2). Variation: Harambe back/Zercher squat with a
-       41-inch Purple, Red, or Blue (never a 37-inch — overstretch at lockout).
-    2. Trap-Bar Style Deadlift (Harambe, banded) — 3x5-6 @ heavy
-       Your loaded hip hinge. 37-inch band doubled under the CyberPlate; tension
-       starts near zero at the floor and peaks at lockout, so pull every rep to
-       a hard glute squeeze. Work the Green-Yellow bands; stack a Red or Blue
-       on top once Yellow is full reps. Hinge from the hips, neutral spine.
-       Log as band(s) + length (e.g. 37 Gray or 37 Yellow+Red).
+    1. Back Squat (or Belt Squat) — 4x5-6 @ heavy
+       The single highest-yield lift for cycling power. A belt squat or
+       safety-bar variant works equally well if spinal loading is a concern.
+       Drive through mid-foot, full depth, brace the core. This bilateral
+       squat is the anchor of the day — log the load every session so
+       progression is visible.
+    2. Trap-Bar Deadlift (or Romanian Deadlift) — 3x5-6 @ heavy
+       Your loaded hip hinge. Pull every rep to a hard glute squeeze at
+       lockout. Hinge from the hips, neutral spine. Log the load.
     3. Bulgarian Split Squat (Dumbbells) — 3x6-8 each leg @ heavy
        Single-leg strength and hip stability. Hold DBs and load it — work toward
        30-40lb. Control the descent, drive through the front heel.
@@ -70,11 +64,11 @@ weight_training_taper:
     sets on the squat.
 
     Heavy Compounds (20 min) — same load as your block, far less volume.
-    1. Harambe Belt Squat (dip belt + rope/rod) — 2x4-5 @ heavy
-       Same band + rope setting you built to in the block. Crisp, fast reps;
-       stop well short of failure.
-    2. Trap-Bar Style Deadlift (Harambe, banded) — 2x4-5 @ heavy
-       Same band(s) you built to in the block. Heavy hinge, low volume. Leave
+    1. Back Squat (or Belt Squat) — 2x4-5 @ heavy
+       Same load you built to in the block. Crisp, fast reps; stop well short
+       of failure.
+    2. Trap-Bar Deadlift (or Romanian Deadlift) — 2x4-5 @ heavy
+       Same load you built to in the block. Heavy hinge, low volume. Leave
        the gym feeling fresh, not cooked.
 
     Cooldown (4 min)
@@ -118,7 +112,6 @@ sweet_spot:
     directly raised threshold W/kg in recreational men of the same age cohort
     (MDPI Sports 2024). Heavy barbell work — not big-gear grinding — is the
     evidence-backed route to force adaptations; that's the weight_training day.
-    See docs/cycling-training-report.md for full citations.
 
 periodization:
   taper_weeks: 4 # fewer weeks-to-race than this → taper routine, 1x/week
@@ -138,9 +131,9 @@ scheduling:
   # sweet-spot session. With 1, a fresh week has at most 2 hard cycling days
   # (sweet-spot + 1); every other day fills as easy Zone 2 base. Raise toward 2
   # only in a dedicated build block — keeping this low is what holds the
-  # ~80% low-intensity majority the evidence calls for (see
-  # docs/cycling-training-report.md). All non-quality days are now easy, never
-  # "moderate" — moderate-everywhere riding is the grey-zone trap to avoid.
+  # ~80% low-intensity majority the evidence calls for. All non-quality days
+  # are easy, never "moderate" — moderate-everywhere riding is the grey-zone
+  # trap to avoid.
   hard_cycling_days: 1
 
 # Planned-load targets the planner attaches to each generated workout, so the
