@@ -7,6 +7,7 @@ import type {
   IntervalsEvent,
 } from "./types.js";
 import { mostDeficientZone, zoneLabel, type Zone } from "./zones.js";
+import { holidayPlaceholderWorkout } from "./holidays.js";
 import type { ReadinessSignal } from "./readiness.js";
 
 function addDays(dateStr: string, days: number): string {
@@ -109,6 +110,7 @@ export type ExistingEventKind = "weights" | "sweet_spot" | "hard_cycling" | "eas
 // arbitrary names (e.g. a hand-added or third-party workout title).
 export function classifyExistingEvent(e: IntervalsEvent): ExistingEventKind {
   if (e.category === "NOTE") return "other"; // rest-day notes carry no training stress
+  if (e.category === "HOLIDAY") return "other"; // travel banners carry no training stress, whatever their name says
   if (e.category?.startsWith("RACE")) return "hard_cycling";
   if (e.type === "WeightTraining" || /strength|weights/i.test(e.name)) return "weights";
   if (/sweet ?spot/i.test(e.name)) return "sweet_spot";
@@ -195,10 +197,19 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // "2026-04-21T00:00:00"), so normalize every source to its YYYY-MM-DD prefix
   // before comparing — otherwise occupied days never match and get double-booked.
   const dayKey = (d: string): string => d.slice(0, 10);
-  const lockedDates = new Set([
-    ...existingEvents.map((e) => dayKey(e.start_date_local)),
+  // Holiday days are locked too, so no phase places a workout on them. A
+  // HOLIDAY event covered by holidayDates must not itself lock its start day
+  // (its span is handled here, and locking would suppress the placeholder
+  // below); an uncovered one — caller has holidays disabled — locks its start
+  // day exactly as before this feature existed.
+  const holidaySet = new Set((input.holidayDates ?? []).map(dayKey));
+  const occupiedDates = new Set([
+    ...existingEvents
+      .filter((e) => !(e.category === "HOLIDAY" && holidaySet.has(dayKey(e.start_date_local))))
+      .map((e) => dayKey(e.start_date_local)),
     ...(completedDates ?? []).map(dayKey),
   ]);
+  const lockedDates = new Set([...occupiedDates, ...holidaySet]);
   const dates: string[] = [];
   for (let i = 0; i < days; i++) dates.push(addDays(startDate, i));
   const available = dates.map((d, i) => (lockedDates.has(d) ? -1 : i)).filter((i) => i >= 0);
@@ -220,6 +231,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // anchors avoid false positives like "Prolonged Effort" or "Longmont Crit".
   let hasExistingLongRide = false;
   for (const e of existingEvents) {
+    if (e.category === "HOLIDAY") continue; // no training stress, and "Long weekend away" must not eat the long-ride promotion
     const idx = dayDiff(startDate, dayKey(e.start_date_local));
     if (idx >= days) continue;
     if (idx >= 0 && /\blong\b/i.test(e.name)) hasExistingLongRide = true;
@@ -279,6 +291,18 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     [...slots, ...existingWeightDays].every(
       (s) => Math.abs(idx - s) >= scheduling.min_weight_gap_days,
     );
+
+  // Phase H: holiday days. Locked out of every placement phase (see
+  // lockedDates), so nothing below lands on them. In "placeholder" mode each
+  // holiday day that isn't already occupied by a real event or a logged
+  // activity gets a zero-load optional cross-training entry, so the calendar
+  // shows the planner saw the trip rather than silently going blank.
+  if (config.holidays.mode === "placeholder") {
+    for (let i = 0; i < days; i++) {
+      if (!holidaySet.has(dates[i]) || occupiedDates.has(dates[i])) continue;
+      plan[i].push(holidayPlaceholderWorkout(dates[i]));
+    }
+  }
 
   // Phase 0: when very fatigued, reserve day 0 as rest before any hard placement.
   if (veryFatigued && available.includes(0)) {
@@ -420,7 +444,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   const typeRank = (t: WorkoutType): number => {
     if (t === "rest") return 0;
     if (t === "cycling" || t === "sweet_spot") return 1;
-    return 2; // weights
+    return 2; // weights / travel
   };
   const out: PlannedWorkout[] = [];
   for (let i = 0; i < days; i++) {
@@ -459,7 +483,9 @@ function attachLoadTargets(
 
   for (let i = 0; i < out.length; i++) {
     const w = out[i];
-    if (w.type === "rest") continue;
+    // Travel placeholders keep their fixed duration and stay load-free: a
+    // holiday day must not count toward planned CTL.
+    if (w.type === "rest" || w.type === "travel") continue;
     if (w.type === "weights") {
       w.durationMin = w.durationMin ?? config.weight_training.duration_minutes;
       continue;

@@ -3,6 +3,7 @@ import { parse } from "yaml";
 import type {
   Config,
   FtpSyncConfig,
+  HolidaysConfig,
   LoadTargetsConfig,
   PeriodizationConfig,
   ReadinessConfig,
@@ -40,6 +41,12 @@ const LOAD_TARGETS_DEFAULTS: LoadTargetsConfig = {
 const FTP_SYNC_DEFAULTS: FtpSyncConfig = {
   enabled: true,
   max_change_pct: 10,
+};
+
+const HOLIDAYS_DEFAULTS: HolidaysConfig = {
+  enabled: true,
+  mode: "skip",
+  lookback_days: 60,
 };
 
 const READINESS_DEFAULTS: ReadinessConfig = {
@@ -161,6 +168,34 @@ function validateFtpSync(raw: unknown): Partial<FtpSyncConfig> {
   return out;
 }
 
+function validateHolidays(raw: unknown): Partial<HolidaysConfig> {
+  if (raw == null) return {};
+  if (typeof raw !== "object") {
+    throw new Error("holidays must be an object");
+  }
+  const obj = raw as Record<string, unknown>;
+  const out: Partial<HolidaysConfig> = {};
+  if (obj.enabled !== undefined) {
+    if (typeof obj.enabled !== "boolean") {
+      throw new Error("holidays.enabled must be a boolean");
+    }
+    out.enabled = obj.enabled;
+  }
+  if (obj.mode !== undefined) {
+    if (obj.mode !== "skip" && obj.mode !== "placeholder") {
+      throw new Error('holidays.mode must be "skip" or "placeholder"');
+    }
+    out.mode = obj.mode;
+  }
+  if (obj.lookback_days !== undefined) {
+    if (typeof obj.lookback_days !== "number" || obj.lookback_days < 0) {
+      throw new Error("holidays.lookback_days must be a non-negative number");
+    }
+    out.lookback_days = obj.lookback_days;
+  }
+  return out;
+}
+
 function validatePeriodization(raw: unknown): Partial<PeriodizationConfig> {
   if (raw == null) return {};
   if (typeof raw !== "object") {
@@ -249,6 +284,11 @@ export async function loadConfig(filePath: string): Promise<Config> {
     ...FTP_SYNC_DEFAULTS,
     ...validateFtpSync(doc.ftp_sync),
   };
+
+  const holidays: HolidaysConfig = {
+    ...HOLIDAYS_DEFAULTS,
+    ...validateHolidays(doc.holidays),
+  };
   // The artifact ceiling must sit above the alarm threshold, or the filter would
   // drop genuine elevations before they can trip suppression — a self-defeating
   // config that fails silently otherwise.
@@ -268,5 +308,6 @@ export async function loadConfig(filePath: string): Promise<Config> {
     periodization,
     readiness,
     ftp_sync,
+    holidays,
   };
 }

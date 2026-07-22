@@ -8,6 +8,7 @@ import { todayLocal, addLocalDays } from "./dates.js";
 import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zones.js";
 import { structuredWorkoutFor } from "./workout.js";
 import { latestEftp, renderTargets, syncFtp } from "./ftp.js";
+import { holidayDatesInWindow } from "./holidays.js";
 import type {
   PlannedWorkout,
   IntervalsEvent,
@@ -126,7 +127,9 @@ export function formatPlan(workouts: PlannedWorkout[]): string {
           ? "WT"
           : w.type === "sweet_spot"
             ? "SS"
-            : "CY";
+            : w.type === "travel"
+              ? "XT"
+              : "CY";
     const zoneTag = w.targetZone ? ` (${zoneLabel(w.targetZone)})` : "";
     const loadTag =
       typeof w.load === "number"
@@ -152,6 +155,7 @@ const WORKOUT_TYPE_TO_EVENT_TYPE: Record<WorkoutType, string> = {
   sweet_spot: "Ride",
   weights: "WeightTraining",
   rest: "Note",
+  travel: "Workout", // generic activity type — a holiday placeholder is not a ride
 };
 
 export function workoutToEvent(w: PlannedWorkout): IntervalsEvent {
@@ -334,13 +338,22 @@ async function main() {
     -Math.max(1, config.scheduling.min_weight_gap_days - 1),
   );
 
-  const [events, activities, wellnessRange, raceEvents, rideSettings] = await Promise.all([
-    intervals.getEvents(eventLookbackStr, endStr),
-    intervals.getActivities(lookbackStr, today),
-    intervals.getTrainingLoadRange(wellnessStr, today),
-    intervals.getEvents(today, raceHorizonStr),
-    intervals.getRideSportSettings(),
-  ]);
+  // Holiday detection needs its own, much deeper lookback: the events API
+  // filters on *start* date only, so a holiday that began weeks ago and still
+  // covers this week would be invisible to the planning-window fetch.
+  const holidayLookbackStr = addLocalDays(today, -config.holidays.lookback_days);
+
+  const [events, activities, wellnessRange, raceEvents, rideSettings, holidayEvents] =
+    await Promise.all([
+      intervals.getEvents(eventLookbackStr, endStr),
+      intervals.getActivities(lookbackStr, today),
+      intervals.getTrainingLoadRange(wellnessStr, today),
+      intervals.getEvents(today, raceHorizonStr),
+      intervals.getRideSportSettings(),
+      config.holidays.enabled
+        ? intervals.getEvents(holidayLookbackStr, endStr)
+        : Promise.resolve([]),
+    ]);
   const load = latestTrainingLoad(wellnessRange, today);
 
   // eFTP sync before planning: the applied FTP is what Intervals.icu will
@@ -368,6 +381,8 @@ async function main() {
   const raceDate = resolveRaceDate(raceEvents, today, config.periodization.race_date);
   const weeksToRace = raceDate ? weeksUntil(today, raceDate) : undefined;
 
+  const holidaySet = holidayDatesInWindow(holidayEvents, today, endStr);
+
   const planned = schedule({
     startDate: today,
     existingEvents: events,
@@ -378,6 +393,7 @@ async function main() {
     completedDates,
     weeksToRace,
     readiness,
+    holidayDates: [...holidaySet],
   }).map((w) => ({ ...w, description: renderTargets(w.description, renderValues) }));
 
   // Match the scheduler: suppressed readiness downgrades the displayed tier too,
@@ -398,6 +414,24 @@ async function main() {
   if (rampGuardTriggered(rampRatePct, config) && rampRatePct !== undefined) {
     console.log(
       `WARNING: CTL ramp +${rampRatePct.toFixed(1)}%/wk > ${config.scheduling.max_weekly_ramp_pct}% threshold — hard rides downgraded`,
+    );
+  }
+  if (holidaySet.size > 0) {
+    // Name only the holidays actually overlapping this week — the lookback
+    // fetch also returns long-finished ones.
+    const names = [
+      ...new Set(
+        holidayEvents
+          .filter((e) => holidayDatesInWindow([e], today, endStr).size > 0)
+          .map((e) => e.name),
+      ),
+    ].join(", ");
+    console.log(
+      `HOLIDAY: ${names} — ${holidaySet.size} day(s) this week ${
+        config.holidays.mode === "placeholder"
+          ? "get a cross-training placeholder"
+          : "left unplanned"
+      }`,
     );
   }
   console.log();

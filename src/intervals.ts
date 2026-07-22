@@ -28,6 +28,7 @@ function parseEvent(raw: unknown): IntervalsEvent | null {
   return {
     ...(typeof e.id === "number" ? { id: e.id } : {}),
     start_date_local: e.start_date_local,
+    ...(typeof e.end_date_local === "string" ? { end_date_local: e.end_date_local } : {}),
     name: typeof e.name === "string" ? e.name : "",
     ...(typeof e.category === "string" ? { category: e.category } : {}),
     ...(typeof e.description === "string" ? { description: e.description } : {}),

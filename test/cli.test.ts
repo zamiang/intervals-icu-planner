@@ -110,6 +110,19 @@ describe("formatPlan", () => {
     expect(out).toMatch(/\[ {2}\]/); // rest — two spaces
   });
 
+  it("tags travel placeholders with the cross-training icon", () => {
+    const out = formatPlan([
+      {
+        date: "2026-08-03",
+        type: "travel",
+        name: "Travel Day — Optional Cross-Training",
+        description: "holiday",
+        intensity: "easy",
+      },
+    ]);
+    expect(out).toContain("[XT]");
+  });
+
   it("includes an abbreviated day-of-week for each date", () => {
     const out = formatPlan([week[0]]);
     // 2026-04-20 is a Monday
@@ -182,6 +195,23 @@ describe("workoutToEvent", () => {
       intensity: "hard",
     });
     expect(event.start_date_local).toBe("2026-04-22T00:00:00");
+  });
+
+  it("maps travel placeholders to a zero-load Workout event", () => {
+    const event = workoutToEvent({
+      date: "2026-08-03",
+      type: "travel",
+      name: "Travel Day — Optional Cross-Training",
+      description: "holiday — optional easy cross-training",
+      intensity: "easy",
+      durationMin: 30,
+    });
+    expect(event.category).toBe("WORKOUT");
+    expect(event.type).toBe("Workout");
+    expect(event.moving_time).toBe(30 * 60);
+    // No planned TSS/IF — a holiday day must not count toward planned CTL.
+    expect(event.icu_training_load).toBeUndefined();
+    expect(event.icu_intensity).toBeUndefined();
   });
 
   it("maps sweet_spot to a Ride workout", () => {
@@ -417,6 +447,26 @@ describe("pushPlan", () => {
     expect(createEvent).toHaveBeenCalledTimes(2); // rest day skipped
     expect(result.created).toHaveLength(2);
     expect(result.failed).toHaveLength(0);
+  });
+
+  it("pushes travel placeholders (unlike rest days)", async () => {
+    const createEvent = vi.fn().mockResolvedValue({});
+    const result = await pushPlan(
+      { createEvent },
+      [
+        {
+          date: "2026-08-03",
+          type: "travel",
+          name: "Travel Day — Optional Cross-Training",
+          description: "holiday",
+          intensity: "easy",
+          durationMin: 30,
+        },
+      ],
+      () => {},
+    );
+    expect(createEvent).toHaveBeenCalledTimes(1);
+    expect(result.created).toEqual(["2026-08-03 — Travel Day — Optional Cross-Training"]);
   });
 
   it("records failures and keeps going", async () => {

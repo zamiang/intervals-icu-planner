@@ -89,6 +89,32 @@ sweet_spot:
     await expect(loadConfig(bad)).rejects.toThrow("ftp_sync.max_change_pct");
   });
 
+  it("applies holidays defaults when the section is absent", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(file, VALID_YAML, "utf8");
+    const config = await loadConfig(file);
+    expect(config.holidays).toEqual({ enabled: true, mode: "skip", lookback_days: 60 });
+  });
+
+  it("accepts holidays overrides and rejects invalid values", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(
+      file,
+      `${VALID_YAML}\nholidays:\n  enabled: false\n  mode: placeholder\n  lookback_days: 30\n`,
+      "utf8",
+    );
+    const config = await loadConfig(file);
+    expect(config.holidays).toEqual({ enabled: false, mode: "placeholder", lookback_days: 30 });
+
+    const badMode = path.join(tmpDir, "bad-mode.yaml");
+    await fs.writeFile(badMode, `${VALID_YAML}\nholidays:\n  mode: vacation\n`, "utf8");
+    await expect(loadConfig(badMode)).rejects.toThrow("holidays.mode");
+
+    const badLookback = path.join(tmpDir, "bad-lookback.yaml");
+    await fs.writeFile(badLookback, `${VALID_YAML}\nholidays:\n  lookback_days: -1\n`, "utf8");
+    await expect(loadConfig(badLookback)).rejects.toThrow("holidays.lookback_days");
+  });
+
   it("accepts a max_weekly_ramp_pct override", async () => {
     const yaml = `
 weight_training:
