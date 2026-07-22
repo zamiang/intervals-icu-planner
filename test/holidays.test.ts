@@ -80,6 +80,27 @@ describe("holidayDatesInWindow", () => {
     expect([...dates].sort()).toEqual(["2026-08-02", "2026-08-03", "2026-08-04"]);
   });
 
+  it("still treats a drifted midnight-end format as exclusive", () => {
+    // If the API ever adds milliseconds or a zone suffix, the end must stay
+    // exclusive — otherwise every holiday silently grows by one day.
+    for (const end of [
+      "2026-08-05",
+      "2026-08-05T00:00",
+      "2026-08-05T00:00:00.000",
+      "2026-08-05T00:00:00Z",
+      "2026-08-05T00:00:00+01:00",
+    ]) {
+      const e: IntervalsEvent = {
+        start_date_local: "2026-08-02T00:00:00",
+        end_date_local: end,
+        name: "Trip",
+        category: "HOLIDAY",
+      };
+      const dates = holidayDatesInWindow([e], "2026-08-01", "2026-08-31");
+      expect([...dates].sort(), `end ${end}`).toEqual(["2026-08-02", "2026-08-03", "2026-08-04"]);
+    }
+  });
+
   it("ignores non-HOLIDAY events even when they span dates", () => {
     const e: IntervalsEvent = {
       start_date_local: "2026-08-02T00:00:00",
@@ -140,6 +161,19 @@ describe("applyHolidayPolicy", () => {
       "2026-08-03",
       "2026-08-04",
     ]);
+    expect([...result.placeholderDates].sort()).toEqual(["2026-08-03", "2026-08-04"]);
+  });
+
+  it("emits no placeholder for a holiday day that already holds a real event", () => {
+    // Same rule as the scheduler's Phase H — and the guard that keeps
+    // push-week --replace from consuming the day's existing event as an
+    // update target and overwriting it with travel content.
+    const events = [workout("2026-08-03", "Hard Ride"), workout("2026-08-04", "Easy Ride")];
+    const occupied = new Set(["2026-08-03"]);
+    const result = applyHolidayPolicy(events, holidaySet, "placeholder", occupied);
+    expect(result.dropped).toHaveLength(2);
+    expect(result.events.map((e) => e.start_date_local.slice(0, 10))).toEqual(["2026-08-04"]);
+    expect([...result.placeholderDates]).toEqual(["2026-08-04"]);
   });
 });
 

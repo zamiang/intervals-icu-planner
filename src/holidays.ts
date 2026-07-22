@@ -14,14 +14,17 @@ import type { HolidaysConfig, IntervalsEvent, PlannedWorkout } from "./types.js"
 
 const dayKey = (d: string): string => d.slice(0, 10);
 
-// Last calendar day an event covers. An end of exactly T00:00:00 on a later
-// day is exclusive (see above); an end with any other time, an end equal to
-// the start, or no end at all means the event is contained in its final day.
+// Last calendar day an event covers. A midnight end on a later day is
+// exclusive (see above); an end with any other time, an end equal to the
+// start, or no end at all means the event is contained in its final day.
+// "Midnight" tolerates format drift — a bare date, optional seconds,
+// fractional seconds, and a Z/offset suffix all count, so a future API change
+// like "T00:00:00.000" can't silently extend every holiday by one day.
 function lastCoveredDate(e: IntervalsEvent): string {
   if (!e.end_date_local) return dayKey(e.start_date_local);
   const endDate = dayKey(e.end_date_local);
-  const midnightEnd =
-    e.end_date_local.slice(10) === "" || e.end_date_local.slice(10) === "T00:00:00";
+  const time = e.end_date_local.slice(10);
+  const midnightEnd = time === "" || /^T00:00(:00(\.0+)?)?(Z|[+-]\d{2}:?\d{2})?$/.test(time);
   if (midnightEnd && endDate > dayKey(e.start_date_local)) return addLocalDays(endDate, -1);
   return endDate;
 }
@@ -83,11 +86,18 @@ export function holidayPlaceholderEvent(date: string): IntervalsEvent {
 // Apply the holiday policy to a list of to-be-pushed events (push-week path):
 // events on holiday days are dropped ("skip") or coalesced into one placeholder
 // per day ("placeholder"). Non-holiday days pass through untouched.
+//
+// occupiedDates are days that already hold a real (non-holiday) calendar
+// event: no placeholder is emitted for them — same rule as the scheduler's
+// Phase H. This matters most under push-week --replace, where an emitted
+// placeholder would consume the day's existing event as an update target and
+// overwrite it with zero-load travel content.
 export function applyHolidayPolicy(
   events: IntervalsEvent[],
   holidayDates: Set<string>,
   mode: HolidaysConfig["mode"],
-): { events: IntervalsEvent[]; dropped: IntervalsEvent[] } {
+  occupiedDates: Set<string> = new Set(),
+): { events: IntervalsEvent[]; dropped: IntervalsEvent[]; placeholderDates: Set<string> } {
   const kept: IntervalsEvent[] = [];
   const dropped: IntervalsEvent[] = [];
   const placeholderDates = new Set<string>();
@@ -98,10 +108,10 @@ export function applyHolidayPolicy(
       continue;
     }
     dropped.push(e);
-    if (mode === "placeholder" && !placeholderDates.has(date)) {
+    if (mode === "placeholder" && !placeholderDates.has(date) && !occupiedDates.has(date)) {
       placeholderDates.add(date);
       kept.push(holidayPlaceholderEvent(date));
     }
   }
-  return { events: kept, dropped };
+  return { events: kept, dropped, placeholderDates };
 }

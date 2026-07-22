@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { planPushActions, sessionToEvent } from "../scripts/push-week.js";
+import { applyHolidayPolicy, HOLIDAY_PLACEHOLDER } from "../src/holidays.js";
 import type { Config, IntervalsEvent } from "../src/types.js";
 
 const ev = (date: string, name: string, id?: number): IntervalsEvent => ({
@@ -52,6 +53,57 @@ describe("planPushActions", () => {
       kind: "skip",
       reason: "existing event has no id; cannot replace",
     });
+  });
+});
+
+// The push-week holiday wiring, composed the way main() composes it:
+// applyHolidayPolicy (fed the occupied-day set derived from existing events)
+// runs before planPushActions decides create/update/skip.
+describe("holiday policy → planPushActions composition", () => {
+  const holidaySet = new Set(["2026-08-03", "2026-08-04"]);
+
+  const runPolicy = (
+    planned: IntervalsEvent[],
+    existing: IntervalsEvent[],
+    mode: "skip" | "placeholder",
+    replace: boolean,
+  ) => {
+    const occupied = new Set(existing.map((e) => e.start_date_local.slice(0, 10)));
+    const { events, dropped } = applyHolidayPolicy(planned, holidaySet, mode, occupied);
+    return { actions: planPushActions(events, existing, replace), dropped };
+  };
+
+  it("never lets a placeholder overwrite a real event under --replace", () => {
+    // Scenario from real life: a ride was pushed before the trip landed on the
+    // calendar. Re-pushing the week with --replace must not consume that ride
+    // as an update target and rewrite it into a zero-load travel entry.
+    const planned = [ev("2026-08-03", "Sweet Spot Intervals"), ev("2026-08-05", "Easy Ride")];
+    const existing = [ev("2026-08-03", "Previously Pushed Ride", 42)];
+    const { actions, dropped } = runPolicy(planned, existing, "placeholder", true);
+
+    expect(dropped.map((e) => e.name)).toEqual(["Sweet Spot Intervals"]);
+    // No action may target the pre-existing event's id, and no placeholder
+    // reaches the push at all for the occupied day.
+    expect(actions.filter((a) => a.kind === "update")).toEqual([]);
+    expect(actions.map((a) => [a.kind, a.date, a.event.name])).toEqual([
+      ["create", "2026-08-05", "Easy Ride"],
+    ]);
+  });
+
+  it("creates a placeholder only on empty holiday days", () => {
+    const planned = [ev("2026-08-03", "Sweet Spot Intervals"), ev("2026-08-04", "Easy Ride")];
+    const existing = [ev("2026-08-03", "Previously Pushed Ride", 42)];
+    const { actions } = runPolicy(planned, existing, "placeholder", false);
+    expect(actions.map((a) => [a.kind, a.date, a.event.name])).toEqual([
+      ["create", "2026-08-04", HOLIDAY_PLACEHOLDER.name],
+    ]);
+  });
+
+  it("pushes nothing on holiday days in skip mode", () => {
+    const planned = [ev("2026-08-03", "Sweet Spot Intervals"), ev("2026-08-05", "Easy Ride")];
+    const { actions, dropped } = runPolicy(planned, [], "skip", true);
+    expect(dropped).toHaveLength(1);
+    expect(actions.map((a) => [a.kind, a.date])).toEqual([["create", "2026-08-05"]]);
   });
 });
 

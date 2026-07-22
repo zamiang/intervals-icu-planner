@@ -228,11 +228,15 @@ async function main() {
   // render from the (freshly synced) Intervals.icu sport settings.
   // Holiday policy first: sessions landing on holiday days are dropped (or
   // coalesced into one zero-load placeholder per day) before any push logic.
-  const { events: pushEvents, dropped: holidayDropped } = applyHolidayPolicy(
-    events,
-    holidaySet,
-    config.holidays.mode,
-  );
+  // Days already holding a real event get no placeholder at all — under
+  // --replace one would consume that event as an update target and overwrite
+  // it with travel content.
+  const occupiedDates = new Set(existing.map((e) => e.start_date_local.slice(0, 10)));
+  const {
+    events: pushEvents,
+    dropped: holidayDropped,
+    placeholderDates,
+  } = applyHolidayPolicy(events, holidaySet, config.holidays.mode, occupiedDates);
 
   const renderValues = await syncFtp(client, rideSettings, activities, config.ftp_sync, { dryRun });
   for (const e of pushEvents) {
@@ -245,8 +249,9 @@ async function main() {
     `Week anchored to Monday ${anchorStr}${dryRun ? " — DRY RUN" : ""}${replace ? " — REPLACE" : ""}`,
   );
   for (const e of holidayDropped) {
-    const note = config.holidays.mode === "placeholder" ? "; placeholder pushed instead" : "";
-    console.log(`  skip    ${e.start_date_local.slice(0, 10)} — ${e.name} (holiday${note})`);
+    const date = e.start_date_local.slice(0, 10);
+    const note = placeholderDates.has(date) ? "; placeholder pushed instead" : "";
+    console.log(`  skip    ${date} — ${e.name} (holiday${note})`);
   }
   for (const action of actions) {
     const { date, event: e } = action;
