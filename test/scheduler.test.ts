@@ -54,6 +54,11 @@ const BASE_CONFIG: Config = {
     enabled: true,
     max_change_pct: 10,
   },
+  holidays: {
+    enabled: true,
+    mode: "skip",
+    lookback_days: 60,
+  },
   readiness: {
     enabled: true,
     recent_days: 4,
@@ -1066,5 +1071,107 @@ describe("classifyExistingEvent", () => {
   it("treats notes and unrecognized events as other", () => {
     expect(classifyExistingEvent(ev({ category: "NOTE", name: "Rest Day" }))).toBe("other");
     expect(classifyExistingEvent(ev({ name: "Group Ride" }))).toBe("other");
+  });
+});
+
+describe("holiday awareness", () => {
+  // startDate 2026-04-20 is a Monday; day index i = 2026-04-(20+i).
+  const week = (i: number): string => `2026-04-${String(20 + i).padStart(2, "0")}`;
+
+  const placeholderConfig: Config = {
+    ...BASE_CONFIG,
+    holidays: { ...BASE_CONFIG.holidays, mode: "placeholder" },
+  };
+
+  const holidayEvent = (start: string, end: string, name = "In London"): IntervalsEvent => ({
+    start_date_local: `${start}T00:00:00`,
+    end_date_local: `${end}T00:00:00`,
+    name,
+    category: "HOLIDAY",
+  });
+
+  it("plans nothing on holiday days in skip mode and still fills the rest", () => {
+    const holidayDates = [week(2), week(3)];
+    const result = schedule(makeInput({ holidayDates }));
+    expect(result.filter((w) => holidayDates.includes(w.date))).toEqual([]);
+    // Every non-holiday day is still planned.
+    const plannedDates = new Set(result.map((w) => w.date));
+    for (const i of [0, 1, 4, 5, 6]) expect(plannedDates.has(week(i))).toBe(true);
+  });
+
+  it("keeps the sweet-spot session off holiday days", () => {
+    // Days 2-4 are the preferred sweet-spot slot; block them all out.
+    const result = schedule(makeInput({ holidayDates: [week(2), week(3), week(4)] }));
+    const ss = result.find((w) => w.type === "sweet_spot");
+    expect(ss).toBeDefined();
+    expect([week(2), week(3), week(4)]).not.toContain(ss!.date);
+  });
+
+  it("emits one zero-load travel placeholder per holiday day in placeholder mode", () => {
+    const holidayDates = [week(2), week(3)];
+    const result = schedule(makeInput({ config: placeholderConfig, holidayDates }));
+    const travel = result.filter((w) => w.type === "travel");
+    expect(travel.map((w) => w.date)).toEqual(holidayDates);
+    for (const w of travel) {
+      expect(w.load).toBeUndefined();
+      expect(w.intensityFactor).toBeUndefined();
+      expect(w.intensity).toBe("easy");
+    }
+    // Placeholders are the only thing on those days.
+    expect(result.filter((w) => holidayDates.includes(w.date))).toEqual(travel);
+  });
+
+  it("skips the placeholder on a holiday day already holding a completed activity", () => {
+    const result = schedule(
+      makeInput({
+        config: placeholderConfig,
+        holidayDates: [week(2), week(3)],
+        completedDates: [week(2)],
+      }),
+    );
+    const travel = result.filter((w) => w.type === "travel");
+    expect(travel.map((w) => w.date)).toEqual([week(3)]);
+  });
+
+  it("emits a placeholder on the HOLIDAY event's own start day", () => {
+    // The banner event is on the calendar for day 2 — it must not lock the day
+    // the way a workout event would, or the placeholder could never appear.
+    const result = schedule(
+      makeInput({
+        config: placeholderConfig,
+        existingEvents: [holidayEvent(week(2), week(4))],
+        holidayDates: [week(2), week(3)],
+      }),
+    );
+    expect(result.filter((w) => w.type === "travel").map((w) => w.date)).toEqual([
+      week(2),
+      week(3),
+    ]);
+  });
+
+  it("yields only placeholders when the whole week is a holiday", () => {
+    const holidayDates = [0, 1, 2, 3, 4, 5, 6].map(week);
+    const result = schedule(makeInput({ config: placeholderConfig, holidayDates }));
+    expect(result.map((w) => w.type)).toEqual(Array(7).fill("travel"));
+    // ...and nothing at all in skip mode.
+    expect(schedule(makeInput({ holidayDates }))).toEqual([]);
+  });
+
+  it("does not let a holiday named 'Long ...' suppress the long-ride promotion", () => {
+    const result = schedule(
+      makeInput({
+        existingEvents: [holidayEvent(week(2), week(3), "Long weekend in Paris")],
+        holidayDates: [week(2)],
+      }),
+    );
+    expect(result.some((w) => w.name === "Long Endurance Ride")).toBe(true);
+  });
+
+  it("keeps legacy behavior without holidayDates: a HOLIDAY event locks its start day only", () => {
+    const result = schedule(makeInput({ existingEvents: [holidayEvent(week(2), week(4))] }));
+    expect(result.filter((w) => w.date === week(2))).toEqual([]);
+    // Later days of the span are NOT covered without holidayDates — that is
+    // exactly why callers must pass it (the holidays.enabled=false posture).
+    expect(result.some((w) => w.date === week(3))).toBe(true);
   });
 });

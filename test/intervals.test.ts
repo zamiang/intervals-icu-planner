@@ -85,6 +85,23 @@ describe("IntervalsClient", () => {
       const events = await client.getEvents("2026-04-20", "2026-04-26");
       expect(events).toEqual([]);
     });
+
+    it("preserves end_date_local on multi-day events (HOLIDAY spans)", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          {
+            id: 5,
+            start_date_local: "2026-08-02T00:00:00",
+            end_date_local: "2026-08-15T00:00:00",
+            name: "In London",
+            category: "HOLIDAY",
+          },
+        ],
+      });
+      const events = await client.getEvents("2026-08-01", "2026-08-31");
+      expect(events[0].end_date_local).toBe("2026-08-15T00:00:00");
+    });
   });
 
   describe("getTrainingLoad", () => {

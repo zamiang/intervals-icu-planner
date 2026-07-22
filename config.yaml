@@ -161,6 +161,20 @@ ftp_sync:
   enabled: true
   max_change_pct: 10
 
+# Holiday awareness: days covered by an Intervals.icu HOLIDAY calendar event
+# are blocked out of the week instead of scheduled — no rides pushed while
+# traveling. mode "skip" leaves those days empty (the holiday banner already
+# explains the gap); "placeholder" pushes a zero-load "optional cross-training"
+# entry on each covered day instead. lookback_days matters because the events
+# API only returns events *starting* in the queried range — a trip that began
+# weeks ago would otherwise be invisible to the weekly planning fetch, so
+# holidays are fetched this far back. Set enabled: false to treat HOLIDAY
+# events like any other calendar event (they then lock only their start day).
+holidays:
+  enabled: true
+  mode: skip
+  lookback_days: 60
+
 # Readiness guard: HRV / resting-HR trend from Intervals.icu wellness. A short
 # recent window is compared to a longer rolling baseline; a clear drop downgrades
 # the week one fatigue tier (floored at "fatigued"), the same easy-bias logic as

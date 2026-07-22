@@ -21,6 +21,7 @@ import { loadConfig } from "../src/config.js";
 import { IntervalsClient } from "../src/intervals.js";
 import { sweetSpotWorkout } from "../src/workout.js";
 import { renderTargets, syncFtp } from "../src/ftp.js";
+import { applyHolidayPolicy, holidayDatesInWindow } from "../src/holidays.js";
 import type { Config, IntervalsEvent } from "../src/types.js";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -197,26 +198,56 @@ async function main() {
 
   const client = new IntervalsClient(process.env.INTERVALS_API_KEY!);
   const today = todayLocal();
-  const [existing, rideSettings, activities] = await Promise.all([
-    client.getEvents(oldest, newest),
+  // The events fetch starts well before the week when holiday detection is on:
+  // the events API filters on *start* date only, so a HOLIDAY that began weeks
+  // ago and still covers this week would otherwise be invisible. Pre-week
+  // events are harmless to planPushActions — its date keys can only match
+  // events inside the planned week.
+  const eventsOldest = config.holidays.enabled
+    ? addLocalDays(oldest, -config.holidays.lookback_days)
+    : oldest;
+  const [fetchedEvents, rideSettings, activities] = await Promise.all([
+    client.getEvents(eventsOldest, newest),
     client.getRideSportSettings(),
     // 30 days is plenty to find the latest ride carrying an eFTP estimate.
     client.getActivities(addLocalDays(today, -30), today),
   ]);
+  const holidaySet = config.holidays.enabled
+    ? holidayDatesInWindow(fetchedEvents, oldest, newest)
+    : new Set<string>();
+  // HOLIDAY events covered by the set drop out of the occupied-day/replace
+  // bookkeeping: their days are handled by the holiday policy below, and under
+  // --replace they must never be consumed as an update target (which would
+  // overwrite the holiday banner itself).
+  const existing = fetchedEvents.filter(
+    (e) => !(e.category === "HOLIDAY" && holidaySet.has(e.start_date_local.slice(0, 10))),
+  );
 
   // eFTP sync + placeholder rendering: descriptions in the plan file carry
   // {ftp}/{lthr}/{w:..}/{hr:..} placeholders instead of hardcoded watts; they
   // render from the (freshly synced) Intervals.icu sport settings.
+  // Holiday policy first: sessions landing on holiday days are dropped (or
+  // coalesced into one zero-load placeholder per day) before any push logic.
+  const { events: pushEvents, dropped: holidayDropped } = applyHolidayPolicy(
+    events,
+    holidaySet,
+    config.holidays.mode,
+  );
+
   const renderValues = await syncFtp(client, rideSettings, activities, config.ftp_sync, { dryRun });
-  for (const e of events) {
+  for (const e of pushEvents) {
     if (e.description) e.description = renderTargets(e.description, renderValues);
   }
 
-  const actions = planPushActions(events, existing, replace);
+  const actions = planPushActions(pushEvents, existing, replace);
 
   console.log(
     `Week anchored to Monday ${anchorStr}${dryRun ? " — DRY RUN" : ""}${replace ? " — REPLACE" : ""}`,
   );
+  for (const e of holidayDropped) {
+    const note = config.holidays.mode === "placeholder" ? "; placeholder pushed instead" : "";
+    console.log(`  skip    ${e.start_date_local.slice(0, 10)} — ${e.name} (holiday${note})`);
+  }
   for (const action of actions) {
     const { date, event: e } = action;
     const load = typeof e.icu_training_load === "number" ? `, ${e.icu_training_load} TSS` : "";

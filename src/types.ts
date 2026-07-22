@@ -53,6 +53,16 @@ export interface ReadinessConfig {
   rhr_artifact_bpm: number; // default 25 — resting HR ≥ baseline_median + this is a sensor artifact (e.g. a ride file's bogus "resting HR" overwriting the wellness value), not physiology, and is dropped before the median. Well above rhr_rise_bpm so a real alarm still fires.
 }
 
+// HOLIDAY-awareness: when a HOLIDAY calendar event overlaps the planning
+// window, the covered days are blocked out instead of scheduled. "skip" leaves
+// them empty; "placeholder" pushes a zero-load optional cross-training entry so
+// the calendar shows the planner saw the trip rather than silently thinning.
+export interface HolidaysConfig {
+  enabled: boolean; // default true — when false, HOLIDAY events are treated like any other calendar event
+  mode: "skip" | "placeholder"; // default "skip"
+  lookback_days: number; // default 60 — how far before the window to search for HOLIDAY events that started earlier (the events API only returns events *starting* in the queried range, not ones overlapping it)
+}
+
 // eFTP auto-sync: pull Intervals.icu's rolling FTP estimate from the latest
 // ride and write it to the Ride sport-settings FTP, so `% FTP` workout steps
 // and rendered watt callouts track fitness without hand edits after each test.
@@ -70,6 +80,7 @@ export interface Config {
   periodization: PeriodizationConfig;
   readiness: ReadinessConfig;
   ftp_sync: FtpSyncConfig;
+  holidays: HolidaysConfig;
 }
 
 // --- Intervals.icu ---
@@ -77,6 +88,7 @@ export interface Config {
 export interface IntervalsEvent {
   id?: number;
   start_date_local: string; // we write YYYY-MM-DD; the API returns it with a time component (e.g. "2026-04-21T00:00:00") on read — normalize before comparing
+  end_date_local?: string; // multi-day events (e.g. HOLIDAY) carry an exclusive midnight end: a holiday shown Aug 2-14 reads back "2026-08-15T00:00:00"
   name: string;
   category?: string; // "WORKOUT", "NOTE", "RACE_A", etc. (read for race detection)
   description?: string;
@@ -114,7 +126,9 @@ export interface Activity {
 
 // --- Scheduler ---
 
-export type WorkoutType = "cycling" | "sweet_spot" | "weights" | "rest";
+// "travel" is the zero-load holiday placeholder (holidays.mode: placeholder) —
+// pushed to the calendar like a workout, but carries no TSS/IF.
+export type WorkoutType = "cycling" | "sweet_spot" | "weights" | "rest" | "travel";
 
 export type CyclingIntensity = "easy" | "moderate" | "hard";
 
@@ -141,4 +155,5 @@ export interface SchedulerInput {
   completedDates?: string[]; // dates with a logged activity; locked like existing events. Callers pass YYYY-MM-DD, but the scheduler normalizes to the date prefix so timestamps are accepted too
   weeksToRace?: number; // whole weeks until the A race; undefined when no race is known
   readiness?: ReadinessSignal; // HRV/RHR readiness; absent ⇒ scheduler behaves exactly as before
+  holidayDates?: string[]; // dates covered by HOLIDAY calendar events; blocked out per config.holidays.mode. Absent ⇒ scheduler behaves exactly as before
 }

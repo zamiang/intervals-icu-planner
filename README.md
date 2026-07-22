@@ -151,6 +151,10 @@ For each 7-day window, starting from today:
 Weight and sweet-spot days are always classified as "hard" for the
 back-to-back constraint.
 
+Days already holding a calendar event or a logged activity are never planned
+over, and days covered by an Intervals.icu **HOLIDAY** calendar event are
+blocked out entirely (see below).
+
 On **fresh** or **moderate** weeks, weight sessions are co-located onto hard
 days (polarized stacking) to keep full-recovery days open. On **fatigued** or
 **very fatigued** weeks this is disabled — stacking two hard sessions on one day
@@ -217,6 +221,28 @@ If the trailing 7-day CTL ramp exceeds `max_weekly_ramp_pct`, hard cycling
 targets are dropped and remaining hard fills are downgraded — the same
 philosophy as the TSB-driven downgrade, just driven by CTL ramp rate. The
 `plan` output prints a warning when this fires.
+
+### Holidays & travel
+
+Add a **HOLIDAY** event to your Intervals.icu calendar for any trip and both
+`plan` and `push-week` stop scheduling rides on the covered days — including
+the Monday-morning automation, so a full week away simply pushes nothing.
+Behavior is tuned in the `holidays:` block of `config.yaml`:
+
+- `mode: skip` (default) leaves holiday days empty — the holiday banner on the
+  calendar already explains the gap.
+- `mode: placeholder` pushes a zero-load "Travel Day — Optional
+  Cross-Training" entry on each covered day instead, so the calendar shows the
+  planner saw the trip. Placeholders carry no TSS/IF and never count toward
+  planned CTL.
+
+Multi-day holidays are handled via the event's end date (Intervals.icu stores
+it as an exclusive midnight bound). Because the events API only returns events
+_starting_ inside the queried range, holidays are fetched
+`holidays.lookback_days` (default 60) further back so a trip that began weeks
+ago still blocks the current week. Set `holidays.enabled: false` to treat
+HOLIDAY events like any other calendar event (they then lock only their start
+day).
 
 ### Readiness downgrade (HRV & resting HR)
 
