@@ -112,17 +112,31 @@ export function manualActivityFor(
   };
 }
 
-async function fetchHevyPage(page: number, apiKey: string): Promise<HevyWorkout[]> {
+export interface HevyPage {
+  pageCount: number;
+  workouts: HevyWorkout[];
+}
+
+// The endpoint returns { page, page_count, workouts: [...] }; tolerate a bare
+// array too (pageCount Infinity defers to the short-page break in main).
+export function parseHevyPage(data: unknown): HevyPage {
+  if (Array.isArray(data)) return { pageCount: Infinity, workouts: data as HevyWorkout[] };
+  const body = data as { page_count?: unknown; workouts?: unknown };
+  return {
+    pageCount: typeof body.page_count === "number" ? body.page_count : Infinity,
+    workouts: Array.isArray(body.workouts) ? (body.workouts as HevyWorkout[]) : [],
+  };
+}
+
+export async function fetchHevyPage(page: number, apiKey: string): Promise<HevyPage> {
   const url = `${HEVY_BASE}/workouts?page=${page}&pageSize=${PAGE_SIZE}`;
   const res = await fetch(url, { headers: { "api-key": apiKey, Accept: "application/json" } });
+  // Hevy 404s any page past page_count rather than returning an empty list.
+  if (res.status === 404) return { pageCount: page - 1, workouts: [] };
   if (!res.ok) {
     throw new Error(`Hevy API error (${res.status}): ${await res.text()}`);
   }
-  const data = (await res.json()) as unknown;
-  // The endpoint returns { page, page_count, workouts: [...] }; tolerate a bare array too.
-  if (Array.isArray(data)) return data as HevyWorkout[];
-  const workouts = (data as { workouts?: unknown }).workouts;
-  return Array.isArray(workouts) ? (workouts as HevyWorkout[]) : [];
+  return parseHevyPage((await res.json()) as unknown);
 }
 
 // --- Normalize a Hevy workout into StrengthExercise[] (kg → lb) ---
@@ -153,10 +167,9 @@ async function main(): Promise<void> {
   // Fetch workouts (newest first), applying --since and --pages limits.
   const workouts: HevyWorkout[] = [];
   for (let p = 1; p <= pages; p++) {
-    const batch = await fetchHevyPage(p, apiKey);
-    if (batch.length === 0) break;
+    const { pageCount, workouts: batch } = await fetchHevyPage(p, apiKey);
     workouts.push(...batch);
-    if (batch.length < PAGE_SIZE) break;
+    if (p >= pageCount || batch.length < PAGE_SIZE) break;
   }
   const selected = workouts.filter((w) => !since || w.start_time.slice(0, 10) >= since);
 

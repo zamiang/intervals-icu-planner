@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { toLocalDateTime, manualActivityFor } from "../scripts/push-strength-hevy.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import {
+  toLocalDateTime,
+  manualActivityFor,
+  parseHevyPage,
+  fetchHevyPage,
+} from "../scripts/push-strength-hevy.js";
 import { MARKER } from "../src/strength.js";
 
 describe("toLocalDateTime", () => {
@@ -16,6 +21,44 @@ describe("toLocalDateTime", () => {
     expect(toLocalDateTime("2026-01-02T03:04:05Z")).toMatch(
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/,
     );
+  });
+});
+
+describe("parseHevyPage", () => {
+  it("extracts page_count and workouts from the documented response shape", () => {
+    const page = parseHevyPage({ page: 1, page_count: 3, workouts: [{ id: "w1" }] });
+    expect(page.pageCount).toBe(3);
+    expect(page.workouts).toEqual([{ id: "w1" }]);
+  });
+
+  it("tolerates a bare array with an unknown page count", () => {
+    const page = parseHevyPage([{ id: "w1" }]);
+    expect(page.pageCount).toBe(Infinity);
+    expect(page.workouts).toEqual([{ id: "w1" }]);
+  });
+});
+
+describe("fetchHevyPage", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("treats a 404 as the end of pagination instead of throwing", async () => {
+    // Hevy 404s any page past page_count, so a workout count that is an exact
+    // multiple of the page size must not crash the run (the 2026-07-20 failure).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ error: "Page not found" }), { status: 404 }),
+      ),
+    );
+    await expect(fetchHevyPage(2, "key")).resolves.toEqual({ pageCount: 1, workouts: [] });
+  });
+
+  it("still throws on other error statuses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("nope", { status: 401 })),
+    );
+    await expect(fetchHevyPage(1, "key")).rejects.toThrow("Hevy API error (401)");
   });
 });
 
