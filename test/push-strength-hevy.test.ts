@@ -46,9 +46,7 @@ describe("fetchHevyPage", () => {
     // multiple of the page size must not crash the run (the 2026-07-20 failure).
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(JSON.stringify({ error: "Page not found" }), { status: 404 }),
-      ),
+      vi.fn(async () => new Response(JSON.stringify({ error: "Page not found" }), { status: 404 })),
     );
     await expect(fetchHevyPage(2, "key")).resolves.toEqual({ pageCount: 1, workouts: [] });
   });
