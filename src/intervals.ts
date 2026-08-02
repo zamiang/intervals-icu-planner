@@ -1,3 +1,4 @@
+import type { CustomItemDef, RemoteCustomItem } from "./customItems.js";
 import type { Activity, IntervalsEvent, TrainingLoad, WellnessEntry } from "./types.js";
 
 const BASE_URL = "https://intervals.icu/api/v1";
@@ -286,6 +287,57 @@ export class IntervalsClient {
     }
     const data = (await res.json()) as Record<string, unknown>;
     return { id: typeof data.id === "string" ? data.id : String(data.id ?? "") };
+  }
+
+  // Custom items are the account's fitness charts, computed activity fields,
+  // activity charts etc. (Settings → Custom). Used by scripts/sync-custom-items.ts
+  // to keep the items defined in src/customItems.ts in sync with the account.
+  async getCustomItems(): Promise<RemoteCustomItem[]> {
+    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/custom-item`;
+    const res = await this.fetch(url, { headers: this.headers });
+    if (!res.ok) {
+      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
+    }
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+    return data
+      .filter((raw): raw is Record<string, unknown> => !!raw && typeof raw === "object")
+      .filter((raw) => typeof raw.id === "number" && typeof raw.name === "string")
+      .map((raw) => ({
+        id: raw.id as number,
+        type: typeof raw.type === "string" ? raw.type : "",
+        name: raw.name as string,
+        ...(typeof raw.description === "string" ? { description: raw.description } : {}),
+        content: raw.content,
+      }));
+  }
+
+  // Both writes force visibility to PRIVATE on purpose: these are personal
+  // training items, and the sync should reassert that even if visibility was
+  // flipped in the UI (planSync doesn't diff visibility, so the reassertion
+  // only lands when content/description drift triggers an update anyway).
+  async createCustomItem(item: CustomItemDef): Promise<void> {
+    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/custom-item`;
+    const res = await this.fetch(url, {
+      method: "POST",
+      headers: this.headers,
+      body: JSON.stringify({ ...item, visibility: "PRIVATE" }),
+    });
+    if (!res.ok) {
+      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
+    }
+  }
+
+  async updateCustomItem(id: number, item: CustomItemDef): Promise<void> {
+    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/custom-item/${id}`;
+    const res = await this.fetch(url, {
+      method: "PUT",
+      headers: this.headers,
+      body: JSON.stringify({ ...item, visibility: "PRIVATE" }),
+    });
+    if (!res.ok) {
+      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
+    }
   }
 
   async deleteEvent(id: number): Promise<void> {

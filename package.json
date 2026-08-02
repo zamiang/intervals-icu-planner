@@ -18,6 +18,7 @@
     "events": "tsx scripts/events.ts",
     "push-strength": "tsx scripts/push-strength.ts",
     "push-strength:hevy": "tsx scripts/push-strength-hevy.ts",
+    "sync-custom-items": "tsx scripts/sync-custom-items.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
