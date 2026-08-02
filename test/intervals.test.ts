@@ -621,4 +621,138 @@ describe("IntervalsClient", () => {
       await expect(client.deleteEvent(42)).rejects.toThrow("Intervals.icu API error (403)");
     });
   });
+
+  describe("getCustomItems", () => {
+    it("fetches and parses custom items", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          {
+            id: 1183160,
+            type: "ACTIVITY_FIELD",
+            name: "Temp Drift",
+            description: "2nd-half minus 1st-half temp.",
+            content: { code: "TempDrift" },
+            usage_count: 0, // server-side extras must not break parsing
+          },
+        ],
+      });
+
+      const items = await client.getCustomItems();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://intervals.icu/api/v1/athlete/0/custom-item",
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: expect.stringContaining("Basic"),
+          }),
+        }),
+      );
+      expect(items).toEqual([
+        {
+          id: 1183160,
+          type: "ACTIVITY_FIELD",
+          name: "Temp Drift",
+          description: "2nd-half minus 1st-half temp.",
+          content: { code: "TempDrift" },
+        },
+      ]);
+    });
+
+    it("drops malformed entries and omits a null description", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          null,
+          "junk",
+          { name: "no id" },
+          { id: 7, name: "Chart", type: "FITNESS_CHART", description: null, content: {} },
+        ],
+      });
+
+      const items = await client.getCustomItems();
+
+      expect(items).toHaveLength(1);
+      expect(items[0].id).toBe(7);
+      expect("description" in items[0]).toBe(false);
+    });
+
+    it("returns [] on a non-array response and throws on non-ok", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ error: "nope" }) });
+      expect(await client.getCustomItems()).toEqual([]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () => "Forbidden",
+      });
+      await expect(client.getCustomItems()).rejects.toThrow("Intervals.icu API error (403)");
+    });
+  });
+
+  describe("createCustomItem", () => {
+    const def = {
+      type: "ACTIVITY_FIELD" as const,
+      name: "Temp Drift",
+      description: "2nd-half minus 1st-half temp.",
+      content: { code: "TempDrift", script: "1" },
+    };
+
+    it("POSTs the definition with PRIVATE visibility", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 1 }) });
+
+      await client.createCustomItem(def);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://intervals.icu/api/v1/athlete/0/custom-item",
+        expect.objectContaining({ method: "POST" }),
+      );
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body).toMatchObject({ ...def, visibility: "PRIVATE" });
+    });
+
+    it("throws on non-ok response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 422,
+        text: async () => "Invalid content",
+      });
+
+      await expect(client.createCustomItem(def)).rejects.toThrow("Intervals.icu API error (422)");
+    });
+  });
+
+  describe("updateCustomItem", () => {
+    const def = {
+      type: "FITNESS_CHART" as const,
+      name: "Decoupling (Rides)",
+      description: "Decoupling per ride.",
+      content: { id: "decpl001", plots: [] },
+    };
+
+    it("PUTs the definition to the item's id endpoint with PRIVATE visibility", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 1183132 }) });
+
+      await client.updateCustomItem(1183132, def);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://intervals.icu/api/v1/athlete/0/custom-item/1183132",
+        expect.objectContaining({ method: "PUT" }),
+      );
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body).toMatchObject({ ...def, visibility: "PRIVATE" });
+    });
+
+    it("throws on non-ok response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: async () => "Not Found",
+      });
+
+      await expect(client.updateCustomItem(999, def)).rejects.toThrow(
+        "Intervals.icu API error (404)",
+      );
+    });
+  });
 });

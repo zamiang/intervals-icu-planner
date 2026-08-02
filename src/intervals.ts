@@ -312,6 +312,10 @@ export class IntervalsClient {
       }));
   }
 
+  // Both writes force visibility to PRIVATE on purpose: these are personal
+  // training items, and the sync should reassert that even if visibility was
+  // flipped in the UI (planSync doesn't diff visibility, so the reassertion
+  // only lands when content/description drift triggers an update anyway).
   async createCustomItem(item: CustomItemDef): Promise<void> {
     const url = `${BASE_URL}/athlete/${ATHLETE_ID}/custom-item`;
     const res = await this.fetch(url, {
