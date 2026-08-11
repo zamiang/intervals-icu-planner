@@ -187,8 +187,12 @@ describe("schedule", () => {
   it("returns an empty plan when every day is already locked", () => {
     const existing: IntervalsEvent[] = [];
     for (let i = 0; i < 7; i++) {
-      const d = new Date("2026-04-20T00:00:00");
-      d.setDate(d.getDate() + i);
+      // Stay in UTC end-to-end (bare "YYYY-MM-DD" parses as UTC midnight, and
+      // toISOString formats in UTC). Parsing "T00:00:00" as *local* time here
+      // shifted every date back a day on UTC+ hosts, leaving 2026-04-26
+      // unlocked and the test timezone-dependent.
+      const d = new Date("2026-04-20");
+      d.setUTCDate(d.getUTCDate() + i);
       existing.push({
         id: i + 1,
         start_date_local: d.toISOString().slice(0, 10),
