@@ -21,8 +21,7 @@ export function latestEftp(activities: Activity[]): number | undefined {
 }
 
 export type FtpSyncDecision =
-  | { action: "apply"; target: number }
-  | { action: "skip"; reason: string };
+  { action: "apply"; target: number } | { action: "skip"; reason: string };
 
 // Decide whether to write eFTP into the sport settings. Pure so it's testable;
 // the caller performs the PUT. `max_change_pct` is a bad-data guard: a single
