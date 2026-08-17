@@ -1,0 +1,81 @@
+# Week of 2026-08-17 — the last intact training week before the Mayo Clinic
+# (Aug 24-26) and Alaska (Aug 28 - Sep 7) HOLIDAY blocks.
+#
+# Intent: hold CTL, don't build it. Fitness accumulated this week will not
+# survive 14 days of travel, so the week spends itself on the two things that
+# do survive a layoff — threshold/VO2 quality and strength — rather than on
+# junk aerobic volume. Two quality rides, two strength sessions, one moderate
+# long ride. Weekly ride load ~346 against a CTL of ~51, i.e. maintenance.
+#
+#   npm run push-week -- --file scripts/week-2026-08-17.yaml --start 2026-08-17 --replace
+
+sessions:
+  # --- Mon: quality #1 + strength (unchanged from what's already scheduled) ---
+  - day: Mon
+    workout: sweet_spot
+    intensity: 0.88
+
+  - day: Mon
+    workout: weight_training
+
+  # --- Tue: genuine recovery, short. Legs are 2 days off a 4h ride. ---
+  - day: Tue
+    name: Easy Recovery Spin
+    type: Ride
+    load: 30
+    minutes: 50
+    intensity: 0.58
+    description: >
+      Easy recovery spin, ~50 min (~{w:58}W at {ftp}W FTP, HR under ~{hr:75} /
+      75% LTHR {lthr}). High cadence, low torque. This is recovery, not base —
+      if it feels like work, back off or cut it short.
+
+  # --- Wed: quality #2. VO2 holds power through a layoff better than volume. ---
+  - day: Wed
+    name: VO2 Max Intervals 5x3
+    type: Ride
+    load: 72
+    minutes: 60
+    intensity: 0.85
+    description: >
+      Warm-up 15 min easy with 3 x 30s openers near threshold in the last 5 min.
+
+      Main set: 5 x 3 min @ 108-115% FTP (~{w:108-115}W at {ftp}W FTP), 3 min
+      easy spin between. Start each rep at the bottom of the range and build —
+      the last 60s should be the hardest part. If rep 4 or 5 falls off more
+      than ~10W, stop the set rather than grinding out a broken rep.
+
+      Cooldown 8 min easy Zone 1.
+
+      This is the highest-value session of the week: VO2 and threshold power
+      decay far more slowly across a travel block than accumulated aerobic
+      volume does.
+
+  # --- Thu: strength #2. The lean-mass anchor before 15 disrupted days. ---
+  - day: Thu
+    workout: weight_training
+
+  # --- Fri: easy shakeout. (Was the long ride — moved to Sat.) ---
+  - day: Fri
+    name: Easy Z2 Ride
+    type: Ride
+    load: 40
+    minutes: 60
+    intensity: 0.62
+    description: >
+      Easy Zone 2, ~60 min, conversational (~{w:62}W at {ftp}W FTP, HR under
+      ~{hr:83} / 83% LTHR {lthr}). Keep it boring — Saturday is the long ride.
+
+  # --- Sat: durability anchor, moderate. Not a 6h monster 2 days before flying. ---
+  - day: Sat
+    name: Long Endurance Ride
+    type: Ride
+    load: 115
+    minutes: 180
+    intensity: 0.62
+    description: >
+      Long Z2 endurance, ~3h. Strictly aerobic (~{w:62}W at {ftp}W FTP, HR
+      under ~{hr:83}). Practice fueling at 60-90 g carb/hr from the first
+      30 min — heat and under-fueling were the story of Aug 1, not fitness.
+      Durability over intensity; steady to the end.
+  # Sun intentionally empty — rest and travel prep before the Mayo block.
