@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeReadiness } from "../src/readiness.js";
+import { computeReadiness, readinessLookbackDays } from "../src/readiness.js";
 import type { Config, WellnessEntry } from "../src/types.js";
 
 const READINESS_CONFIG: Config["readiness"] = {
@@ -10,6 +10,11 @@ const READINESS_CONFIG: Config["readiness"] = {
   hrv_drop_sd: 1.5,
   rhr_rise_bpm: 7,
   rhr_artifact_bpm: 25,
+  steps_enabled: true,
+  step_threshold: 12000,
+  step_lookback_days: 7,
+  step_days_required: 4,
+  min_step_samples: 5,
 };
 
 // Minimal Config — computeReadiness only reads config.readiness.
@@ -23,10 +28,16 @@ function makeRange(opts: {
   recentHrv?: number[];
   baselineRhr?: number[];
   recentRhr?: number[];
+  // Step counts for the trailing days of the range, oldest-first — i.e.
+  // `steps.at(-1)` lands on the newest entry. `null` marks a day the wellness
+  // source never populated, which is the common case for "today".
+  steps?: (number | null)[];
 }): WellnessEntry[] {
   const recentLen = Math.max(opts.recentHrv?.length ?? 0, opts.recentRhr?.length ?? 0);
   const baseLen = Math.max(opts.baselineHrv?.length ?? 0, opts.baselineRhr?.length ?? 0);
-  const total = baseLen + recentLen;
+  // Steps can be supplied on their own (no HRV/RHR at all), so they set the
+  // range length when nothing else does.
+  const total = Math.max(baseLen + recentLen, opts.steps?.length ?? 0);
   const out: WellnessEntry[] = [];
   for (let i = 0; i < total; i++) {
     const d = new Date(Date.UTC(2026, 5, 23) - (total - 1 - i) * 86_400_000);
@@ -34,6 +45,10 @@ function makeRange(opts: {
     const idx = isRecent ? i - baseLen : i;
     const hrv = isRecent ? opts.recentHrv?.[idx] : opts.baselineHrv?.[idx];
     const rhr = isRecent ? opts.recentRhr?.[idx] : opts.baselineRhr?.[idx];
+    // Right-align steps against the end of the range so the caller writes the
+    // window it cares about without counting baseline days.
+    const stepIdx = opts.steps ? i - (total - opts.steps.length) : -1;
+    const steps = stepIdx >= 0 ? opts.steps![stepIdx] : undefined;
     out.push({
       date: d.toISOString().slice(0, 10),
       ctl: 50,
@@ -41,6 +56,7 @@ function makeRange(opts: {
       tsb: 0,
       ...(hrv !== undefined ? { hrvSDNN: hrv } : {}),
       ...(rhr !== undefined ? { restingHR: rhr } : {}),
+      ...(typeof steps === "number" ? { steps } : {}),
     });
   }
   return out;
@@ -179,5 +195,174 @@ describe("computeReadiness", () => {
     expect(r.reason).toContain("HRV");
     expect(r.reason).toContain("resting HR");
     expect(r.reason).toContain(", "); // both bits joined
+  });
+
+  // --- non-bike load (steps) ---
+  //
+  // Every case below pairs the step window with a calm HRV/RHR backdrop, so
+  // whatever fires (or doesn't) is the step signal alone.
+  const CALM = {
+    baselineHrv: [55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 60, 60],
+    recentHrv: [60, 60, 60, 60],
+    baselineRhr: Array(16).fill(52),
+    recentRhr: [52, 52, 52, 52],
+  };
+
+  it("suppresses on a sustained run of high-step days even when HRV and RHR are calm", () => {
+    // The 2026-09-07 case: nine days of Alaska hiking at 13-19k steps against a
+    // ~6.7k normal. TSB read +23.5 ("fresh") because none of it was logged as
+    // an activity; the step window is what sees it.
+    const range = makeRange({
+      ...CALM,
+      steps: [17443, 13162, 16366, null, 16990, 18110, 18826],
+    });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.status).toBe("suppressed");
+    expect(r.highStepDays).toBe(6);
+    expect(r.reason).toContain("12,000 steps");
+  });
+
+  it("stays normal for a single big walk in an otherwise ordinary week", () => {
+    // One 18k day (a day hike) among normal days: 1 < step_days_required (4), so
+    // the week is untouched. This is the sustained-vs-one-off distinction.
+    const range = makeRange({
+      ...CALM,
+      steps: [6200, 5800, 18400, 6900, 7100, 6400, 5900],
+    });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.status).toBe("normal");
+    expect(r.highStepDays).toBe(1);
+  });
+
+  it("counts a day exactly at the threshold as high-step", () => {
+    const range = makeRange({
+      ...CALM,
+      steps: [12000, 12000, 12000, 12000, 6000, 6000, 6000],
+    });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.status).toBe("suppressed");
+    expect(r.highStepDays).toBe(4);
+  });
+
+  it("does not count days just below the threshold", () => {
+    const range = makeRange({
+      ...CALM,
+      steps: [11999, 11999, 11999, 11999, 6000, 6000, 6000],
+    });
+    expect(computeReadiness(range, makeConfig()).highStepDays).toBe(0);
+  });
+
+  it("abstains on steps when too few days in the window carry a count", () => {
+    // Only 4 populated days against min_step_samples 5 — all of them high. A
+    // sparse window can't distinguish "a hard week" from "the source synced the
+    // four days I happened to walk", so the step signal reports nothing rather
+    // than acting. HRV/RHR still answer, hence "normal" not "unknown".
+    const range = makeRange({
+      ...CALM,
+      steps: [null, 18000, null, 17000, 19000, null, 16000],
+    });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.status).toBe("normal");
+    expect(r.highStepDays).toBeUndefined();
+    expect(r.stepSampleDays).toBeUndefined();
+  });
+
+  it("tolerates a missing count for today, the normal Intervals.icu state", () => {
+    // `steps` for the newest entry is null until the wellness source syncs. The
+    // window is anchored on the entry date regardless, so the six populated days
+    // behind it still decide the verdict.
+    const range = makeRange({
+      ...CALM,
+      steps: [16000, 15000, 17000, 16500, 6000, 6200, null],
+    });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.status).toBe("suppressed");
+    expect(r.stepSampleDays).toBe(6);
+    expect(r.highStepDays).toBe(4);
+  });
+
+  it("ignores zero-step days rather than counting them as data", () => {
+    // A literal 0 is how some sources report "no data", not a motionless day.
+    // Dropping the two zeros leaves 5 populated days — exactly min_step_samples.
+    const range = makeRange({
+      ...CALM,
+      steps: [0, 0, 16000, 15000, 17000, 16500, 6000],
+    });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.stepSampleDays).toBe(5);
+    expect(r.status).toBe("suppressed");
+  });
+
+  it("ignores steps entirely when steps_enabled is false", () => {
+    const range = makeRange({
+      ...CALM,
+      steps: [17443, 13162, 16366, 18110, 16990, 18826, 15000],
+    });
+    const r = computeReadiness(range, makeConfig({ steps_enabled: false }));
+    expect(r.status).toBe("normal");
+    expect(r.highStepDays).toBeUndefined();
+  });
+
+  it("fires on steps alone with no HRV or resting-HR history at all", () => {
+    // A step-only account (no morning HRV source) still gets the guard: steps
+    // are scored against an absolute threshold, so they need no baseline.
+    const range = makeRange({ steps: [17443, 13162, 16366, 18110, 16990, 18826, 15000] });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.status).toBe("suppressed");
+    expect(r.hrvDeviationSd).toBeUndefined();
+    expect(r.reason).toContain("steps");
+  });
+
+  it("stays unknown when neither HRV/RHR nor steps have enough data", () => {
+    const range = makeRange({ steps: [6000, null, 6200, null] });
+    expect(computeReadiness(range, makeConfig()).status).toBe("unknown");
+  });
+
+  it("names every firing signal in the reason when steps and HRV coincide", () => {
+    const range = makeRange({
+      baselineHrv: [55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 60, 60],
+      recentHrv: [44, 44, 44, 44],
+      steps: [17443, 13162, 16366, 18110, 16990, 18826, 15000],
+    });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.status).toBe("suppressed");
+    expect(r.reason).toContain("HRV");
+    expect(r.reason).toContain("steps");
+  });
+
+  it("reports the step count on a normal week so a rising trend is visible", () => {
+    const range = makeRange({ ...CALM, steps: [13000, 6000, 14000, 6100, 6200, 6000, 5900] });
+    const r = computeReadiness(range, makeConfig());
+    expect(r.status).toBe("normal");
+    expect(r.highStepDays).toBe(2);
+    expect(r.stepSampleDays).toBe(7);
+  });
+});
+
+describe("readinessLookbackDays", () => {
+  it("covers the HRV baseline window under the shipped defaults", () => {
+    // 28 + 4 = 32 comfortably exceeds the 7-day step window, so the HRV
+    // requirement is what sets the fetch depth.
+    expect(readinessLookbackDays(makeConfig())).toBe(32);
+  });
+
+  it("widens to the step window when it reaches past the HRV window", () => {
+    // A longer expedition setting: without this the caller would fetch only 32
+    // days, the 45-day step window would truncate to what was fetched, and the
+    // step guard would abstain forever with no error — the silent-failure mode
+    // this helper exists to prevent.
+    expect(readinessLookbackDays(makeConfig({ step_lookback_days: 45 }))).toBe(45);
+  });
+
+  it("ignores the step window when steps are disabled", () => {
+    const config = makeConfig({ steps_enabled: false, step_lookback_days: 45 });
+    expect(readinessLookbackDays(config)).toBe(32);
+  });
+
+  it("still covers the step window when the HRV windows are narrowed", () => {
+    // The other direction of the same bug: short HRV windows must not shrink
+    // the fetch below what the step signal needs.
+    const config = makeConfig({ baseline_days: 10, recent_days: 2, step_lookback_days: 14 });
+    expect(readinessLookbackDays(config)).toBe(14);
   });
 });

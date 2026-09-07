@@ -3,7 +3,7 @@ loadEnv({ quiet: true });
 import { loadConfig } from "./config.js";
 import { IntervalsClient } from "./intervals.js";
 import { schedule, classifyFatigue, effectiveFatigue, rampGuardTriggered } from "./scheduler.js";
-import { computeReadiness, type ReadinessSignal } from "./readiness.js";
+import { computeReadiness, readinessLookbackDays, type ReadinessSignal } from "./readiness.js";
 import { todayLocal, addLocalDays } from "./dates.js";
 import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zones.js";
 import { structuredWorkoutFor } from "./workout.js";
@@ -106,13 +106,19 @@ function requireEnv(name: string): string {
 }
 
 // One-line readiness summary for the status dashboard. "n/a" when there isn't
-// enough HRV/RHR history to judge, so the line is never silently misleading.
+// enough HRV/RHR/step history to judge, so the line is never silently misleading.
 export function formatReadiness(r: ReadinessSignal): string {
   if (r.status === "suppressed") {
     return `suppressed — ${r.reason} (planner downgrades the week one tier)`;
   }
-  if (r.status === "normal") return "normal";
-  return "n/a (insufficient HRV/resting-HR history)";
+  if (r.status === "normal") {
+    // Surface the step count even when it isn't firing: a week trending toward
+    // the threshold is exactly the context TSB alone can't show.
+    const steps =
+      r.highStepDays !== undefined ? ` (${r.highStepDays} high-step days in window)` : "";
+    return `normal${steps}`;
+  }
+  return "n/a (insufficient HRV/resting-HR/step history)";
 }
 
 export function formatPlan(workouts: PlannedWorkout[]): string {
@@ -266,10 +272,7 @@ async function main() {
     const weekAgoStr = addLocalDays(today, -7);
     // Fetch the wider readiness window so status shows the same readiness state
     // the planner will act on; the ramp is still a trailing-7-day measure.
-    const wellnessStr = addLocalDays(
-      today,
-      -(config.readiness.baseline_days + config.readiness.recent_days),
-    );
+    const wellnessStr = addLocalDays(today, -readinessLookbackDays(config));
 
     const [activities, wellnessRange, rideSettings] = await Promise.all([
       intervals.getActivities(lookbackStr, today),
@@ -324,10 +327,7 @@ async function main() {
   const weekAgoStr = addLocalDays(today, -7);
   // The readiness baseline needs ~a month of wellness, well past the 7 days the
   // ramp uses. Fetch the wider window once and slice the ramp back to 7 days.
-  const wellnessStr = addLocalDays(
-    today,
-    -(config.readiness.baseline_days + config.readiness.recent_days),
-  );
+  const wellnessStr = addLocalDays(today, -readinessLookbackDays(config));
   // Fetch events from just before the window too: a hard session yesterday
   // must block a hard placement today (back-to-back) and a strength session
   // within min_weight_gap_days must push this week's first one out. The

@@ -9,7 +9,14 @@ import {
   downgradeOneTier,
 } from "../src/scheduler.js";
 import { emptyDistribution, zoneLabel } from "../src/zones.js";
-import type { SchedulerInput, IntervalsEvent, Config, PlannedWorkout } from "../src/types.js";
+import { computeReadiness } from "../src/readiness.js";
+import type {
+  SchedulerInput,
+  IntervalsEvent,
+  Config,
+  PlannedWorkout,
+  WellnessEntry,
+} from "../src/types.js";
 
 function isHardEntry(w: PlannedWorkout): boolean {
   return w.type === "weights" || w.type === "sweet_spot" || w.intensity === "hard";
@@ -67,6 +74,11 @@ const BASE_CONFIG: Config = {
     hrv_drop_sd: 1.5,
     rhr_rise_bpm: 7,
     rhr_artifact_bpm: 25,
+    steps_enabled: true,
+    step_threshold: 12000,
+    step_lookback_days: 7,
+    step_days_required: 4,
+    min_step_samples: 5,
   },
 };
 
@@ -479,6 +491,39 @@ describe("schedule", () => {
         makeInput({ trainingLoad: freshLoad, readiness: { status: "suppressed" } }),
       );
       for (const ride of suppressed.filter((w) => w.type === "cycling")) {
+        expect(ride.intensity).not.toBe("hard");
+      }
+    });
+
+    it("suppresses a TSB-fresh week end-to-end from steps alone (the Alaska-trip case)", () => {
+      // 2026-09-07: TSB +23.5 read "fresh" because a nine-day hiking trip
+      // carries no logged TSS. Runs computeReadiness over a real-shaped wellness
+      // range and feeds the result to schedule(), so this pins the whole path —
+      // not just the scheduler's reaction to a hand-made signal.
+      const wellness: WellnessEntry[] = [];
+      for (let i = 0; i < 32; i++) {
+        const d = new Date(Date.UTC(2026, 7, 7) + i * 86_400_000); // 2026-08-07 .. 09-07
+        const date = d.toISOString().slice(0, 10);
+        // HRV and resting HR held flat at baseline so only steps can fire here.
+        // Steps sit at a normal ~6.5k until the trip starts on 08-30.
+        wellness.push({
+          date,
+          ctl: 45,
+          atl: 22,
+          tsb: 23.5,
+          hrvSDNN: i % 2 === 0 ? 55 : 61,
+          restingHR: 52,
+          steps: date >= "2026-08-30" ? 16000 : 6500,
+        });
+      }
+      const readiness = computeReadiness(wellness, BASE_CONFIG);
+      expect(readiness.status).toBe("suppressed");
+      expect(readiness.reason).toContain("steps");
+
+      const week = schedule(
+        makeInput({ trainingLoad: { ctl: 45, atl: 22, tsb: 23.5 }, readiness }),
+      );
+      for (const ride of week.filter((w) => w.type === "cycling")) {
         expect(ride.intensity).not.toBe("hard");
       }
     });

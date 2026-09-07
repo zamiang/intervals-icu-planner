@@ -198,3 +198,12 @@ readiness:
   hrv_drop_sd: 1.5 # recent HRV ≤ baseline_mean − 1.5·SD → suppressed
   rhr_rise_bpm: 7 # recent resting HR ≥ baseline_median + 7 bpm → suppressed
   rhr_artifact_bpm: 25 # resting HR ≥ baseline_median + 25 bpm is a sensor artifact (e.g. a ride file's bogus "resting HR" overwriting wellness), dropped before the median so it can't fake a false alarm
+  # Non-bike load. CTL/TSB are built from logged activity TSS only, so a
+  # walking-heavy trip (hiking, a city holiday) reads "fresh" while the legs
+  # carry a week of real work. A sustained run of high-step days suppresses the
+  # week exactly like an HRV drop — one tier, never more.
+  steps_enabled: true # set false to ignore steps and run readiness on HRV/resting HR alone
+  step_threshold: 12000 # a day at or above this many steps counts as a high non-bike-load day (~p90 of a normal week here; a typical day is ~6-7k)
+  step_lookback_days: 7 # trailing window, ending at the newest wellness entry, scanned for those days
+  step_days_required: 4 # this many high-step days in the window → suppressed. Several days is what makes it a *sustained* load signal rather than a reaction to one big walk
+  min_step_samples: 5 # need this many days carrying a step count in the window or the step signal abstains (Intervals.icu leaves today's steps null until the source syncs)
