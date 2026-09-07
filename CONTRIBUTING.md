@@ -10,7 +10,7 @@ cp .env.example .env   # fill in your Intervals.icu (and optional Hevy) API keys
 npm run check          # smoke-test your credentials
 ```
 
-Requires Node.js 20+. You'll want your own [Intervals.icu](https://intervals.icu)
+Requires Node.js 22.12+ (Vitest 5). You'll want your own [Intervals.icu](https://intervals.icu)
 account to test against — every write command supports `--dry-run`, so you can
 develop without touching your real calendar.
 
