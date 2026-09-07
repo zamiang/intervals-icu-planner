@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeReadiness } from "../src/readiness.js";
+import { computeReadiness, readinessLookbackDays } from "../src/readiness.js";
 import type { Config, WellnessEntry } from "../src/types.js";
 
 const READINESS_CONFIG: Config["readiness"] = {
@@ -336,5 +336,33 @@ describe("computeReadiness", () => {
     expect(r.status).toBe("normal");
     expect(r.highStepDays).toBe(2);
     expect(r.stepSampleDays).toBe(7);
+  });
+});
+
+describe("readinessLookbackDays", () => {
+  it("covers the HRV baseline window under the shipped defaults", () => {
+    // 28 + 4 = 32 comfortably exceeds the 7-day step window, so the HRV
+    // requirement is what sets the fetch depth.
+    expect(readinessLookbackDays(makeConfig())).toBe(32);
+  });
+
+  it("widens to the step window when it reaches past the HRV window", () => {
+    // A longer expedition setting: without this the caller would fetch only 32
+    // days, the 45-day step window would truncate to what was fetched, and the
+    // step guard would abstain forever with no error — the silent-failure mode
+    // this helper exists to prevent.
+    expect(readinessLookbackDays(makeConfig({ step_lookback_days: 45 }))).toBe(45);
+  });
+
+  it("ignores the step window when steps are disabled", () => {
+    const config = makeConfig({ steps_enabled: false, step_lookback_days: 45 });
+    expect(readinessLookbackDays(config)).toBe(32);
+  });
+
+  it("still covers the step window when the HRV windows are narrowed", () => {
+    // The other direction of the same bug: short HRV windows must not shrink
+    // the fetch below what the step signal needs.
+    const config = makeConfig({ baseline_days: 10, recent_days: 2, step_lookback_days: 14 });
+    expect(readinessLookbackDays(config)).toBe(14);
   });
 });

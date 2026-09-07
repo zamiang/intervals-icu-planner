@@ -42,6 +42,18 @@ function isoMinusDays(iso: string, n: number): string {
 // from a 2-sample window but won't act on a single reading.
 const MIN_RECENT_SAMPLES = 2;
 
+// How many days of wellness history the readiness signal needs fetched behind
+// "today". HRV/RHR want the baseline plus the recent window; the step signal
+// windows independently on `step_lookback_days`, so a config that widens it
+// past the HRV window (or narrows the HRV windows below it) would otherwise
+// leave the step window truncated by whatever the caller happened to fetch —
+// `min_step_samples` unreachable and the guard silently abstaining forever.
+// Callers fetch this many days back so every window is fully populated.
+export function readinessLookbackDays(config: Config): number {
+  const r = config.readiness;
+  return Math.max(r.baseline_days + r.recent_days, r.steps_enabled ? r.step_lookback_days : 0);
+}
+
 // Non-bike load from daily steps. CTL/ATL/TSB are built from logged activity
 // TSS alone, so nine days of 15-20k steps on a hiking trip leave TSB reading
 // "fresh" while the legs carry a week of real work. Counting *days over a
