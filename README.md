@@ -1,10 +1,10 @@
 # intervals-icu-planner
 
 Weekly training planner for [Intervals.icu](https://intervals.icu): 80/20
-cycling + heavy strength, driven by your CTL/TSB, eFTP, and HRV readiness.
+cycling + heavy strength, driven by your CTL/TSB, eFTP, and HRV/step readiness.
 
 It reads your current form (CTL/ATL/TSB), zone distribution, FTP, and
-HRV/resting-HR readiness from Intervals.icu, schedules a 7-day plan of easy
+HRV/resting-HR/step readiness from Intervals.icu, schedules a 7-day plan of easy
 Zone 2 riding, sweet-spot intervals, weight training, and recovery, then pushes
 the plan to your Intervals.icu calendar as structured workouts with power and
 HR targets. Strength sessions logged in [Hevy](https://www.hevyapp.com) sync
@@ -255,15 +255,26 @@ ago still blocks the current week. Set `holidays.enabled: false` to treat
 HOLIDAY events like any other calendar event (they then lock only their start
 day).
 
-### Readiness downgrade (HRV & resting HR)
+### Readiness downgrade (HRV, resting HR & steps)
 
-On top of TSB, the planner reads your **HRV and resting heart rate** trend from
-Intervals.icu wellness and, when they signal you're under-recovered, downgrades
-the week one fatigue tier (floored at "fatigued"). It compares a short recent
-window against a personal baseline and fires only on a clear drop:
+On top of TSB, the planner reads your **HRV, resting heart rate, and daily step
+count** from Intervals.icu wellness and, when they signal you're
+under-recovered, downgrades the week one fatigue tier (floored at "fatigued").
+HRV and resting HR are compared against a personal baseline and fire only on a
+clear drop; steps fire on a sustained run of high-volume days:
 
 - recent HRV ≤ baseline mean − `readiness.hrv_drop_sd` standard deviations, or
-- recent resting HR ≥ baseline median + `readiness.rhr_rise_bpm` bpm.
+- recent resting HR ≥ baseline median + `readiness.rhr_rise_bpm` bpm, or
+- at least `readiness.step_days_required` of the last `readiness.step_lookback_days`
+  days at or above `readiness.step_threshold` steps.
+
+The step rule exists because **CTL, ATL and TSB are built from logged activity
+TSS alone** — a walking-heavy stretch (a hiking trip, a city holiday, a week on
+your feet) is invisible to them. TSB happily reads "fresh" while your legs carry
+a week of real work, and the planner would build a week to match. Counting _days
+over a threshold_ rather than averaging steps is deliberate: it asks "has this
+been sustained?", which is exactly the question TSB can't answer, and one big
+day hike can't reach the required count on its own.
 
 Like the ramp guard, it can only ever make the week **easier**, never harder —
 good HRV never adds intensity. It's tuned in the `readiness:` block of
@@ -280,8 +291,14 @@ The planner reads two **daily wellness** fields from Intervals.icu:
 | -------------- | ------------------------ | --------------------------- |
 | `hrvSDNN`      | morning HRV (SDNN, ms)   | HRV-drop suppression        |
 | `restingHR`    | resting heart rate (bpm) | resting-HR-rise suppression |
+| `steps`        | daily step count         | non-bike-load suppression   |
 
-These are populated automatically when you connect a device/app that records a
+`steps` comes from the same wellness sync as the other two (any phone, watch or
+scale app Intervals.icu pulls wellness from — Withings, Garmin, Apple Health,
+Fitbit, Oura). It is the only one of the three that needs no personal baseline,
+so the step guard works on day one and on accounts with no HRV source at all.
+
+The first two are populated automatically when you connect a device/app that records a
 **morning HRV + resting-HR measurement** to Intervals.icu (Settings → your
 wellness/health-data connections). Any source Intervals.icu syncs wellness from
 works — e.g. **Oura, WHOOP, Garmin, Apple Health, Ultrahuman, Polar**, or a
@@ -301,8 +318,16 @@ two values by hand on the Intervals.icu wellness page. Recommendations:
   overwrite a day's resting HR with a per-activity estimate; the artifact guard
   (`readiness.rhr_artifact_bpm`) drops readings implausibly far above baseline,
   but a consistent morning source avoids the problem entirely.
+- **Tune `step_threshold` to your own normal** — the default **12,000** is set
+  well above a typical day (~6-7k here) so ordinary weeks never trip it; on
+  Intervals.icu, the wellness page's step chart shows where your own line
+  belongs. The step signal also abstains unless at least
+  `readiness.min_step_samples` days (default **5**) in the lookback window carry
+  a count, because Intervals.icu leaves today's `steps` null until the source
+  syncs and drops the odd day entirely. Set `readiness.steps_enabled: false` to
+  run on HRV and resting HR alone.
 
-If neither field has enough history, readiness simply abstains and the planner
+If no field has enough history, readiness simply abstains and the planner
 runs on TSB and CTL ramp as usual.
 
 ## Development

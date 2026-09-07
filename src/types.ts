@@ -51,6 +51,15 @@ export interface ReadinessConfig {
   hrv_drop_sd: number; // default 1.5 — recent HRV ≤ baseline_mean − this·SD ⇒ suppressed
   rhr_rise_bpm: number; // default 7 — recent resting HR ≥ baseline_median + this ⇒ suppressed
   rhr_artifact_bpm: number; // default 25 — resting HR ≥ baseline_median + this is a sensor artifact (e.g. a ride file's bogus "resting HR" overwriting the wellness value), not physiology, and is dropped before the median. Well above rhr_rise_bpm so a real alarm still fires.
+  // Non-bike load: TSB/CTL see only logged activity TSS, so a walking-heavy
+  // trip (hiking, a city holiday) reads as "fresh" while the legs are anything
+  // but. A sustained run of high-step days suppresses the week exactly like an
+  // HRV drop does — one tier, never more, and it abstains when steps are sparse.
+  steps_enabled: boolean; // default true — when false, steps are ignored and readiness runs on HRV/RHR alone
+  step_threshold: number; // default 12000 — a day at or above this many steps counts as a high non-bike-load day
+  step_lookback_days: number; // default 7 — trailing window (ending at the newest wellness entry) scanned for those days
+  step_days_required: number; // default 4 — this many high-step days in the window ⇒ suppressed. Requiring several days is what makes this a *sustained* load signal rather than a reaction to one big walk.
+  min_step_samples: number; // default 5 — need this many days carrying a step count in the lookback window or the step signal abstains (Intervals.icu leaves today's steps null until the source syncs, and drops the odd day entirely)
 }
 
 // HOLIDAY-awareness: when a HOLIDAY calendar event overlaps the planning
@@ -110,6 +119,7 @@ export interface WellnessEntry extends TrainingLoad {
   date: string; // YYYY-MM-DD (from the wellness `id` field)
   hrvSDNN?: number; // ms (Intervals.icu `hrvSDNN`); absent on days with no morning reading
   restingHR?: number; // bpm (Intervals.icu `restingHR`); absent on days with no morning reading
+  steps?: number; // daily step count (Intervals.icu `steps`); absent until the wellness source syncs the day — today's entry routinely has none
 }
 
 export interface Activity {

@@ -57,6 +57,11 @@ const READINESS_DEFAULTS: ReadinessConfig = {
   hrv_drop_sd: 1.5,
   rhr_rise_bpm: 7,
   rhr_artifact_bpm: 25,
+  steps_enabled: true,
+  step_threshold: 12000,
+  step_lookback_days: 7,
+  step_days_required: 4,
+  min_step_samples: 5,
 };
 
 function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
@@ -119,22 +124,28 @@ function validateReadiness(raw: unknown): Partial<ReadinessConfig> {
   }
   const obj = raw as Record<string, unknown>;
   const out: Partial<ReadinessConfig> = {};
-  if (obj.enabled !== undefined) {
-    if (typeof obj.enabled !== "boolean") {
-      throw new Error("readiness.enabled must be a boolean");
+  const booleanFields = ["enabled", "steps_enabled"] as const;
+  for (const field of booleanFields) {
+    if (obj[field] === undefined) continue;
+    if (typeof obj[field] !== "boolean") {
+      throw new Error(`readiness.${field} must be a boolean`);
     }
-    out.enabled = obj.enabled;
+    out[field] = obj[field] as boolean;
   }
-  // Exclude the boolean `enabled` key (validated above) so the indexed write
-  // type stays `number` — this lets us use `as number` like the sibling
-  // validators instead of an `as never` escape hatch.
-  const numericFields: Exclude<keyof ReadinessConfig, "enabled">[] = [
+  // Exclude the boolean keys (validated above) so the indexed write type stays
+  // `number` — this lets us use `as number` like the sibling validators instead
+  // of an `as never` escape hatch.
+  const numericFields: Exclude<keyof ReadinessConfig, (typeof booleanFields)[number]>[] = [
     "recent_days",
     "baseline_days",
     "min_baseline_samples",
     "hrv_drop_sd",
     "rhr_rise_bpm",
     "rhr_artifact_bpm",
+    "step_threshold",
+    "step_lookback_days",
+    "step_days_required",
+    "min_step_samples",
   ];
   for (const field of numericFields) {
     if (obj[field] === undefined) continue;
@@ -296,6 +307,22 @@ export async function loadConfig(filePath: string): Promise<Config> {
     throw new Error(
       `readiness.rhr_artifact_bpm (${readiness.rhr_artifact_bpm}) must be greater than ` +
         `rhr_rise_bpm (${readiness.rhr_rise_bpm}) — the artifact filter would suppress genuine alarms`,
+    );
+  }
+  // A window that cannot hold the days it demands would make the step signal
+  // permanently unreachable — silently disabling it rather than erroring.
+  if (readiness.step_days_required > readiness.step_lookback_days) {
+    throw new Error(
+      `readiness.step_days_required (${readiness.step_days_required}) must not exceed ` +
+        `step_lookback_days (${readiness.step_lookback_days}) — the step signal could never fire`,
+    );
+  }
+  // Likewise, demanding more populated days than the window holds means the
+  // coverage guard never passes and the signal abstains forever.
+  if (readiness.min_step_samples > readiness.step_lookback_days) {
+    throw new Error(
+      `readiness.min_step_samples (${readiness.min_step_samples}) must not exceed ` +
+        `step_lookback_days (${readiness.step_lookback_days}) — the step signal could never have enough data`,
     );
   }
 

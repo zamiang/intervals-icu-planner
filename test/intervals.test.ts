@@ -159,19 +159,31 @@ describe("IntervalsClient", () => {
       ]);
     });
 
-    it("passes through hrvSDNN and restingHR when present", async () => {
+    it("passes through hrvSDNN, restingHR and steps when present", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => [
-          { id: "2026-04-19", ctl: 55, atl: 60, tsb: -5, hrvSDNN: 48.3, restingHR: 52 },
-          { id: "2026-04-20", ctl: 56, atl: 62, tsb: -6 }, // no morning reading
+          {
+            id: "2026-04-19",
+            ctl: 55,
+            atl: 60,
+            tsb: -5,
+            hrvSDNN: 48.3,
+            restingHR: 52,
+            steps: 14382,
+          },
+          { id: "2026-04-20", ctl: 56, atl: 62, tsb: -6, steps: null }, // no morning reading, steps not yet synced
         ],
       });
       const range = await client.getTrainingLoadRange("2026-04-19", "2026-04-20");
       expect(range[0].hrvSDNN).toBe(48.3);
       expect(range[0].restingHR).toBe(52);
+      expect(range[0].steps).toBe(14382);
       expect(range[1].hrvSDNN).toBeUndefined();
       expect(range[1].restingHR).toBeUndefined();
+      // A null `steps` (the normal state for today) must not become 0 — the
+      // readiness coverage guard has to be able to tell "no data" from "no walking".
+      expect(range[1].steps).toBeUndefined();
     });
 
     it("returns empty array when the response is not an array", async () => {

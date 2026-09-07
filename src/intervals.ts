@@ -133,6 +133,7 @@ export class IntervalsClient {
         ...load,
         ...(typeof e.hrvSDNN === "number" ? { hrvSDNN: e.hrvSDNN } : {}),
         ...(typeof e.restingHR === "number" ? { restingHR: e.restingHR } : {}),
+        ...(typeof e.steps === "number" ? { steps: e.steps } : {}),
       };
     });
   }

@@ -6,6 +6,8 @@ export interface ReadinessSignal {
   status: ReadinessStatus;
   hrvDeviationSd?: number; // (recent HRV median − baseline mean) / baseline SD; negative = parasympathetic suppression
   rhrDeltaBpm?: number; // recent resting-HR median − baseline median; positive = elevated
+  highStepDays?: number; // days in the step lookback window at or above `step_threshold`; undefined when the step signal abstained
+  stepSampleDays?: number; // days in that window that carried a step count at all, so callers can tell "no high-step days" from "no step data"
   reason?: string; // human-readable summary for the status line, set only when suppressed
 }
 
@@ -40,13 +42,50 @@ function isoMinusDays(iso: string, n: number): string {
 // from a 2-sample window but won't act on a single reading.
 const MIN_RECENT_SAMPLES = 2;
 
+// Non-bike load from daily steps. CTL/ATL/TSB are built from logged activity
+// TSS alone, so nine days of 15-20k steps on a hiking trip leave TSB reading
+// "fresh" while the legs carry a week of real work. Counting *days over a
+// threshold* (rather than averaging steps) is deliberate: it answers "has this
+// been sustained?", which is the question TSB is blind to, and one big walk in
+// an otherwise sedentary week can't reach `step_days_required`.
+//
+// Returns undefined counts when the signal abstains — steps disabled, or too
+// few days in the window carry a count to judge coverage. Intervals.icu leaves
+// today's `steps` null until the wellness source syncs, so a window is normally
+// one short even when logging is perfect; `min_step_samples` is set below the
+// window length to absorb that.
+function evaluateSteps(
+  sorted: WellnessEntry[],
+  latest: string,
+  r: Config["readiness"],
+): { highStepDays?: number; stepSampleDays?: number; high: boolean } {
+  if (!r.steps_enabled) return { high: false };
+  const windowStart = isoMinusDays(latest, r.step_lookback_days - 1);
+  const steps = sorted
+    .filter((e) => e.date >= windowStart)
+    .map((e) => e.steps)
+    // `> 0`: a literal 0 is how some sources report "no data for this day"
+    // rather than a genuinely motionless day, and either way a 0 can only ever
+    // pull the count down — dropping it is the conservative reading.
+    .filter((v): v is number => typeof v === "number" && v > 0);
+  if (steps.length < r.min_step_samples) return { high: false };
+  const highStepDays = steps.filter((v) => v >= r.step_threshold).length;
+  return {
+    highStepDays,
+    stepSampleDays: steps.length,
+    high: highStepDays >= r.step_days_required,
+  };
+}
+
 // Compare a short trailing window of HRV / resting-HR against a longer baseline.
 // Single-day HRV is noisy, so we average the most recent `recent_days` and test
 // that against the mean ± SD of the preceding `baseline_days` (the
-// HRV4Training/Oura "normal range" approach). Returns "suppressed" only — like
-// the CTL ramp guard, readiness can downgrade a week but never inflate it. When
-// readiness is disabled or there isn't enough baseline data, returns "unknown"
-// and the scheduler proceeds on TSB alone, exactly as before this existed.
+// HRV4Training/Oura "normal range" approach). A sustained run of high-step days
+// (see evaluateSteps) suppresses on its own too, covering the non-bike load
+// TSB cannot see. Returns "suppressed" only — like the CTL ramp guard,
+// readiness can downgrade a week but never inflate it. When readiness is
+// disabled or no input has enough data, returns "unknown" and the scheduler
+// proceeds on TSB alone, exactly as before this existed.
 export function computeReadiness(range: WellnessEntry[], config: Config): ReadinessSignal {
   const r = config.readiness;
   if (!r?.enabled) return { status: "unknown" };
@@ -94,9 +133,24 @@ export function computeReadiness(range: WellnessEntry[], config: Config): Readin
       ? rawRecRhr.filter((v) => v <= baseRhrMedian + r.rhr_artifact_bpm)
       : rawRecRhr;
 
+  // Steps need no personal baseline (the threshold is absolute), so this stands
+  // on its own: a step-only signal still fires on an account with no HRV strap,
+  // and an HRV-only account behaves exactly as it did before steps existed.
+  const stepSignal = evaluateSteps(sorted, latest, r);
+  const stepCounts = {
+    ...(stepSignal.highStepDays !== undefined ? { highStepDays: stepSignal.highStepDays } : {}),
+    ...(stepSignal.stepSampleDays !== undefined
+      ? { stepSampleDays: stepSignal.stepSampleDays }
+      : {}),
+  };
+
   const haveHrv = recHrv.length >= MIN_RECENT_SAMPLES && baseHrv.length >= r.min_baseline_samples;
   const haveRhr = recRhr.length >= MIN_RECENT_SAMPLES && baseRhr.length >= r.min_baseline_samples;
-  if (!haveHrv && !haveRhr) return { status: "unknown" };
+  // "unknown" only when *nothing* is judgeable. A usable step window is a
+  // verdict even with no HRV/RHR history at all.
+  if (!haveHrv && !haveRhr && stepSignal.highStepDays === undefined) {
+    return { status: "unknown" };
+  }
 
   let hrvDeviationSd: number | undefined;
   if (haveHrv) {
@@ -112,11 +166,23 @@ export function computeReadiness(range: WellnessEntry[], config: Config): Readin
   const hrvLow = hrvDeviationSd !== undefined && hrvDeviationSd <= -r.hrv_drop_sd;
   const rhrHigh = rhrDeltaBpm !== undefined && rhrDeltaBpm >= r.rhr_rise_bpm;
 
-  if (hrvLow || rhrHigh) {
+  if (hrvLow || rhrHigh || stepSignal.high) {
     const bits: string[] = [];
     if (hrvLow) bits.push(`HRV ${hrvDeviationSd!.toFixed(1)}σ below baseline`);
     if (rhrHigh) bits.push(`resting HR +${rhrDeltaBpm!.toFixed(0)} bpm`);
-    return { status: "suppressed", hrvDeviationSd, rhrDeltaBpm, reason: bits.join(", ") };
+    if (stepSignal.high) {
+      bits.push(
+        `${stepSignal.highStepDays} of the last ${r.step_lookback_days} days ` +
+          `≥ ${r.step_threshold.toLocaleString("en-US")} steps`,
+      );
+    }
+    return {
+      status: "suppressed",
+      hrvDeviationSd,
+      rhrDeltaBpm,
+      ...stepCounts,
+      reason: bits.join(", "),
+    };
   }
-  return { status: "normal", hrvDeviationSd, rhrDeltaBpm };
+  return { status: "normal", hrvDeviationSd, rhrDeltaBpm, ...stepCounts };
 }

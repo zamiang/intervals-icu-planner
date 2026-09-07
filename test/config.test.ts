@@ -260,6 +260,49 @@ readiness:
 
     await expect(loadConfig(file)).rejects.toThrow("rhr_artifact_bpm");
   });
+
+  it("throws when step_days_required exceeds step_lookback_days", async () => {
+    // The step signal could never fire — a silent no-op is worse than an error.
+    const yaml =
+      VALID_YAML +
+      `
+readiness:
+  step_lookback_days: 7
+  step_days_required: 9
+`;
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(file, yaml, "utf8");
+
+    await expect(loadConfig(file)).rejects.toThrow("step_days_required");
+  });
+
+  it("throws when min_step_samples exceeds step_lookback_days", async () => {
+    // The coverage guard could never pass, so the step signal would abstain forever.
+    const yaml =
+      VALID_YAML +
+      `
+readiness:
+  step_lookback_days: 7
+  min_step_samples: 8
+`;
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(file, yaml, "utf8");
+
+    await expect(loadConfig(file)).rejects.toThrow("min_step_samples");
+  });
+
+  it("throws when steps_enabled is not a boolean", async () => {
+    const yaml =
+      VALID_YAML +
+      `
+readiness:
+  steps_enabled: "yes"
+`;
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(file, yaml, "utf8");
+
+    await expect(loadConfig(file)).rejects.toThrow("steps_enabled");
+  });
 });
 
 describe("repo config.yaml", () => {

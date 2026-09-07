@@ -106,13 +106,19 @@ function requireEnv(name: string): string {
 }
 
 // One-line readiness summary for the status dashboard. "n/a" when there isn't
-// enough HRV/RHR history to judge, so the line is never silently misleading.
+// enough HRV/RHR/step history to judge, so the line is never silently misleading.
 export function formatReadiness(r: ReadinessSignal): string {
   if (r.status === "suppressed") {
     return `suppressed — ${r.reason} (planner downgrades the week one tier)`;
   }
-  if (r.status === "normal") return "normal";
-  return "n/a (insufficient HRV/resting-HR history)";
+  if (r.status === "normal") {
+    // Surface the step count even when it isn't firing: a week trending toward
+    // the threshold is exactly the context TSB alone can't show.
+    const steps =
+      r.highStepDays !== undefined ? ` (${r.highStepDays} high-step days in window)` : "";
+    return `normal${steps}`;
+  }
+  return "n/a (insufficient HRV/resting-HR/step history)";
 }
 
 export function formatPlan(workouts: PlannedWorkout[]): string {

@@ -59,6 +59,12 @@ describe("formatReadiness", () => {
     expect(formatReadiness({ status: "normal" })).toBe("normal");
     expect(formatReadiness({ status: "unknown" })).toContain("n/a");
   });
+
+  it("shows the high-step-day count on a normal week so a rising trend is visible", () => {
+    expect(formatReadiness({ status: "normal", highStepDays: 2, stepSampleDays: 7 })).toBe(
+      "normal (2 high-step days in window)",
+    );
+  });
 });
 
 describe("formatPlan", () => {
