@@ -80,6 +80,34 @@ export interface FtpSyncConfig {
   max_change_pct: number; // default 10 — refuse a single eFTP jump bigger than this (bad-data guard)
 }
 
+// Daily fuelling targets rendered onto the calendar as a NOTE per planned day —
+// "what should I eat today", derived from the sessions actually scheduled.
+// The deficit is periodized: the week averages to `daily_deficit_kcal`, but
+// quality and long days give some of it back (`fuel_day_addback_kcal`) and the
+// remaining days carry the difference (`deficit_day_extra_kcal`), so no single
+// day sits deeply under-fuelled. `start_date`/`end_date` bound the block so a
+// finished cut stops writing notes on its own instead of running forever.
+export interface FuelingConfig {
+  enabled: boolean; // default false — opt in; the weekly push runs unattended
+  start_date: string | null; // default null — no lower bound
+  end_date: string | null; // default null — no upper bound
+  daily_deficit_kcal: number; // default 550 — the week's average deficit
+  fuel_day_addback_kcal: number; // default 400 — deficit returned on quality/long days
+  deficit_day_extra_kcal: number; // default 150 — extra deficit on rest/easy days
+  min_kcal: number; // default 1800 — hard floor; below this is under-eating, not a deficit
+  protein_g_per_kg: number; // default 2.2 — held constant every day, deficit or not
+  fat_g_per_kg: number; // default 0.8 — hormonal floor
+  non_exercise_multiplier: number; // default 1.35 — RMR -> maintenance before training
+  weights_kcal_per_hour: number; // default 300 — strength sessions have no power model
+  avg_power_factor: number; // default 0.9 — planned IF is normalized power; scale to average
+  low_carb_max_minutes: number; // default 90 — easy rides at/under this ride low-carb
+  hard_min_if: number; // default 0.75 — IF at/above this is a quality session
+  long_min_minutes: number; // default 150 — at/above this, full long-ride fuelling
+  hard_carb_g_per_hour: [number, number]; // default [30, 60]
+  moderate_carb_g_per_hour: [number, number]; // default [60, 75]
+  long_carb_g_per_hour: [number, number]; // default [60, 90]
+}
+
 export interface Config {
   weight_training: WorkoutDefinition;
   weight_training_taper?: WorkoutDefinition; // optional; falls back to weight_training
@@ -90,6 +118,7 @@ export interface Config {
   readiness: ReadinessConfig;
   ftp_sync: FtpSyncConfig;
   holidays: HolidaysConfig;
+  fueling: FuelingConfig;
 }
 
 // --- Intervals.icu ---
@@ -120,6 +149,7 @@ export interface WellnessEntry extends TrainingLoad {
   hrvSDNN?: number; // ms (Intervals.icu `hrvSDNN`); absent on days with no morning reading
   restingHR?: number; // bpm (Intervals.icu `restingHR`); absent on days with no morning reading
   steps?: number; // daily step count (Intervals.icu `steps`); absent until the wellness source syncs the day — today's entry routinely has none
+  weight?: number; // kg (Intervals.icu `weight`); absent on days with no weigh-in. Source for fuelling targets, so they track the live weight rather than a hand-edited constant.
 }
 
 export interface Activity {

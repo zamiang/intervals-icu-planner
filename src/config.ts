@@ -3,6 +3,7 @@ import { parse } from "yaml";
 import type {
   Config,
   FtpSyncConfig,
+  FuelingConfig,
   HolidaysConfig,
   LoadTargetsConfig,
   PeriodizationConfig,
@@ -47,6 +48,27 @@ const HOLIDAYS_DEFAULTS: HolidaysConfig = {
   enabled: true,
   mode: "skip",
   lookback_days: 60,
+};
+
+const FUELING_DEFAULTS: FuelingConfig = {
+  enabled: false,
+  start_date: null,
+  end_date: null,
+  daily_deficit_kcal: 550,
+  fuel_day_addback_kcal: 400,
+  deficit_day_extra_kcal: 150,
+  min_kcal: 1800,
+  protein_g_per_kg: 2.2,
+  fat_g_per_kg: 0.8,
+  non_exercise_multiplier: 1.35,
+  weights_kcal_per_hour: 300,
+  avg_power_factor: 0.9,
+  low_carb_max_minutes: 90,
+  hard_min_if: 0.75,
+  long_min_minutes: 150,
+  hard_carb_g_per_hour: [30, 60],
+  moderate_carb_g_per_hour: [60, 75],
+  long_carb_g_per_hour: [60, 90],
 };
 
 const READINESS_DEFAULTS: ReadinessConfig = {
@@ -154,6 +176,81 @@ function validateReadiness(raw: unknown): Partial<ReadinessConfig> {
     }
     out[field] = obj[field] as number;
   }
+  return out;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function validateFueling(raw: unknown): Partial<FuelingConfig> {
+  if (raw == null) return {};
+  if (typeof raw !== "object") {
+    throw new Error("fueling must be an object");
+  }
+  const obj = raw as Record<string, unknown>;
+  const out: Partial<FuelingConfig> = {};
+
+  if (obj.enabled !== undefined) {
+    if (typeof obj.enabled !== "boolean") {
+      throw new Error("fueling.enabled must be a boolean");
+    }
+    out.enabled = obj.enabled;
+  }
+
+  for (const field of ["start_date", "end_date"] as const) {
+    if (obj[field] === undefined) continue;
+    if (obj[field] === null) {
+      out[field] = null;
+      continue;
+    }
+    if (typeof obj[field] !== "string" || !ISO_DATE.test(obj[field] as string)) {
+      throw new Error(`fueling.${field} must be null or a YYYY-MM-DD date`);
+    }
+    out[field] = obj[field] as string;
+  }
+
+  const numericFields = [
+    "daily_deficit_kcal",
+    "fuel_day_addback_kcal",
+    "deficit_day_extra_kcal",
+    "min_kcal",
+    "protein_g_per_kg",
+    "fat_g_per_kg",
+    "non_exercise_multiplier",
+    "weights_kcal_per_hour",
+    "avg_power_factor",
+    "low_carb_max_minutes",
+    "hard_min_if",
+    "long_min_minutes",
+  ] as const;
+  for (const field of numericFields) {
+    if (obj[field] === undefined) continue;
+    if (typeof obj[field] !== "number" || !Number.isFinite(obj[field])) {
+      throw new Error(`fueling.${field} must be a number`);
+    }
+    out[field] = obj[field] as number;
+  }
+
+  const rangeFields = [
+    "hard_carb_g_per_hour",
+    "moderate_carb_g_per_hour",
+    "long_carb_g_per_hour",
+  ] as const;
+  for (const field of rangeFields) {
+    if (obj[field] === undefined) continue;
+    const v = obj[field];
+    if (
+      !Array.isArray(v) ||
+      v.length !== 2 ||
+      !v.every((n) => typeof n === "number" && Number.isFinite(n))
+    ) {
+      throw new Error(`fueling.${field} must be a [low, high] pair of numbers`);
+    }
+    if ((v[0] as number) > (v[1] as number)) {
+      throw new Error(`fueling.${field} low bound must not exceed the high bound`);
+    }
+    out[field] = [v[0] as number, v[1] as number];
+  }
+
   return out;
 }
 
@@ -300,6 +397,18 @@ export async function loadConfig(filePath: string): Promise<Config> {
     ...HOLIDAYS_DEFAULTS,
     ...validateHolidays(doc.holidays),
   };
+
+  const fueling: FuelingConfig = {
+    ...FUELING_DEFAULTS,
+    ...validateFueling(doc.fueling),
+  };
+  // An inverted window would silently disable the block rather than fail, and a
+  // cut that quietly stops prescribing is worse than one that refuses to start.
+  if (fueling.start_date && fueling.end_date && fueling.start_date > fueling.end_date) {
+    throw new Error(
+      `fueling.start_date (${fueling.start_date}) must not be after fueling.end_date (${fueling.end_date})`,
+    );
+  }
   // The artifact ceiling must sit above the alarm threshold, or the filter would
   // drop genuine elevations before they can trip suppression — a self-defeating
   // config that fails silently otherwise.
@@ -336,5 +445,6 @@ export async function loadConfig(filePath: string): Promise<Config> {
     readiness,
     ftp_sync,
     holidays,
+    fueling,
   };
 }

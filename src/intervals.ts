@@ -1,6 +1,15 @@
 import type { CustomItemDef, RemoteCustomItem } from "./customItems.js";
 import type { Activity, IntervalsEvent, TrainingLoad, WellnessEntry } from "./types.js";
 
+// The slice of the athlete profile the fuelling model needs. Height and date of
+// birth feed the resting-metabolic-rate estimate; both can be unset on an
+// account, so both are nullable and the caller decides whether to proceed.
+export interface AthleteProfile {
+  heightCm: number | null;
+  dateOfBirth: string | null; // YYYY-MM-DD
+  sex: string | null;
+}
+
 const BASE_URL = "https://intervals.icu/api/v1";
 // "0" is Intervals.icu's convention for the authenticated user — resolves to
 // whoever owns the API key.
@@ -134,8 +143,25 @@ export class IntervalsClient {
         ...(typeof e.hrvSDNN === "number" ? { hrvSDNN: e.hrvSDNN } : {}),
         ...(typeof e.restingHR === "number" ? { restingHR: e.restingHR } : {}),
         ...(typeof e.steps === "number" ? { steps: e.steps } : {}),
+        ...(typeof e.weight === "number" ? { weight: e.weight } : {}),
       };
     });
+  }
+
+  async getAthlete(): Promise<AthleteProfile> {
+    const url = `${BASE_URL}/athlete/${ATHLETE_ID}`;
+    const res = await this.fetch(url, { headers: this.headers });
+    if (!res.ok) {
+      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
+    }
+    const data = (await res.json()) as Record<string, unknown>;
+    // Height comes back in metres; every other consumer here works in cm.
+    const heightM = typeof data.height === "number" ? data.height : null;
+    return {
+      heightCm: heightM !== null && heightM > 0 ? heightM * 100 : null,
+      dateOfBirth: typeof data.icu_date_of_birth === "string" ? data.icu_date_of_birth : null,
+      sex: typeof data.sex === "string" ? data.sex : null,
+    };
   }
 
   async getTrainingLoad(date: string): Promise<TrainingLoad> {

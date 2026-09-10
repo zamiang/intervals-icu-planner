@@ -207,3 +207,49 @@ readiness:
   step_lookback_days: 7 # trailing window, ending at the newest wellness entry, scanned for those days
   step_days_required: 4 # this many high-step days in the window → suppressed. Several days is what makes it a *sustained* load signal rather than a reaction to one big walk
   min_step_samples: 5 # need this many days carrying a step count in the window or the step signal abstains (Intervals.icu leaves today's steps null until the source syncs)
+
+# Daily fuelling targets — "what should I eat today" — pushed as one NOTE per
+# planned day alongside the workouts. Numbers are derived from the sessions the
+# scheduler actually placed, so the prescription can never drift out of sync
+# with the plan: a 3-hour Saturday and a rest Monday get different targets
+# automatically. Body weight comes from the latest Intervals.icu weigh-in and
+# height/age from the athlete profile, so nothing here goes stale the way a
+# hand-copied constant would.
+#
+# The deficit is periodized, not flat. `daily_deficit_kcal` is the nominal
+# week-average; quality and long days give `fuel_day_addback_kcal` of it back
+# and the remaining days carry `deficit_day_extra_kcal` more. At this training
+# volume a flat deficit puts energy availability under the ~30 kcal/kg FFM line
+# every single day; periodizing holds the weekly average without any one day
+# sitting deeply under-fuelled. Because of that reshaping, the *realized*
+# weekly deficit is lower than `daily_deficit_kcal` suggests — 650 here lands
+# near 530/day averaged over a typical week (~0.5 kg/week). Tune this one
+# number from the 7-day rolling weight trend; see the biweekly adjustment rule
+# in notes/2026-09-07-diet-block.md.
+#
+# start_date/end_date bound the block so a finished cut stops writing notes on
+# its own rather than running forever under the Monday automation. Set
+# enabled: false to turn it off immediately.
+fueling:
+  enabled: true
+  start_date: "2026-09-28" # the Monday after Escape New York (RACE_A 2026-09-26)
+  end_date: "2026-12-06" # 10 weeks: 9 deficit weeks + one maintenance week
+  daily_deficit_kcal: 650
+  fuel_day_addback_kcal: 400
+  deficit_day_extra_kcal: 150
+  min_kcal: 1800 # hard floor — below this is under-eating, not a deficit
+  protein_g_per_kg: 2.2 # ~172 g at 78.4 kg; held constant every day, deficit or not
+  fat_g_per_kg: 0.8 # hormonal floor, ~63 g
+  non_exercise_multiplier: 1.35 # RMR -> maintenance before training is added
+  weights_kcal_per_hour: 300 # strength has no power model, so a flat rate
+  avg_power_factor: 0.9 # planned IF is normalized power; scale it to average power
+  # On-bike carbohydrate, g/h. Long rides are fuelled fully even when easy
+  # (duration empties glycogen, not intensity) and quality sessions are fuelled
+  # because carb availability is what sets interval quality. Short easy rides
+  # get nothing — that is the one place the deficit is free.
+  low_carb_max_minutes: 90
+  hard_min_if: 0.75
+  long_min_minutes: 150
+  hard_carb_g_per_hour: [30, 60]
+  moderate_carb_g_per_hour: [60, 75]
+  long_carb_g_per_hour: [60, 90]
