@@ -9,6 +9,8 @@ import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zone
 import { structuredWorkoutFor } from "./workout.js";
 import { latestEftp, renderTargets, syncFtp } from "./ftp.js";
 import { ageOn, fuelNoteEvents, latestWeightKg } from "./fueling.js";
+import type { Sex } from "./fueling.js";
+import { ATHLETE_FILE, isCompleteProfile, loadLocalAthlete, mergeAthlete } from "./athlete.js";
 import { holidayDatesInWindow } from "./holidays.js";
 import type { AthleteProfile } from "./intervals.js";
 import type {
@@ -254,19 +256,33 @@ export function buildFuelNotes(
   const weightKg = latestWeightKg(wellnessRange);
   const heightCm = athlete?.heightCm ?? null;
   const dob = athlete?.dateOfBirth ?? null;
+  // Normalized on the way in by both sources, but the profile endpoint can
+  // return anything, so anything other than M/F is treated as absent rather
+  // than silently costed as male.
+  const raw = athlete?.sex?.toUpperCase();
+  const sex: Sex | null = raw === "M" || raw === "F" ? raw : null;
+  const source = `${ATHLETE_FILE} or the Intervals.icu profile`;
   const missing: string[] = [];
   if (weightKg === null) missing.push("no logged weight in the wellness window");
-  if (heightCm === null) missing.push("no height on the Intervals.icu profile");
-  if (dob === null) missing.push("no date of birth on the Intervals.icu profile");
+  if (heightCm === null) missing.push(`no height in ${source}`);
+  if (dob === null) missing.push(`no date of birth in ${source}`);
+  if (sex === null) missing.push(`no sex in ${source}`);
   if (ftp === null || ftp <= 0) missing.push("no FTP in the Ride sport settings");
-  if (missing.length > 0 || weightKg === null || heightCm === null || dob === null || !ftp) {
+  if (
+    missing.length > 0 ||
+    weightKg === null ||
+    heightCm === null ||
+    dob === null ||
+    !sex ||
+    !ftp
+  ) {
     log(`Fuelling: skipped — ${missing.join("; ")}`);
     return [];
   }
 
   const notes = fuelNoteEvents(
     planned,
-    { weightKg, heightCm, ageYears: ageOn(dob, opts.today), ftp },
+    { weightKg, heightCm, ageYears: ageOn(dob, opts.today), sex, ftp },
     cfg,
   );
   // A NOTE doesn't lock its day the way a workout does, so re-running `plan`
@@ -416,18 +432,38 @@ async function main() {
   // covers this week would be invisible to the planning-window fetch.
   const holidayLookbackStr = addLocalDays(today, -config.holidays.lookback_days);
 
-  const [events, activities, wellnessRange, raceEvents, rideSettings, holidayEvents, athlete] =
-    await Promise.all([
-      intervals.getEvents(eventLookbackStr, endStr),
-      intervals.getActivities(lookbackStr, today),
-      intervals.getTrainingLoadRange(wellnessStr, today),
-      intervals.getEvents(today, raceHorizonStr),
-      intervals.getRideSportSettings(),
-      config.holidays.enabled
-        ? intervals.getEvents(holidayLookbackStr, endStr)
-        : Promise.resolve([]),
-      config.fueling.enabled ? intervals.getAthlete() : Promise.resolve(null),
-    ]);
+  // Read before the fan-out: whether the profile endpoint is called at all
+  // depends on what the local file already supplies.
+  const localAthlete = await loadLocalAthlete();
+
+  const [
+    events,
+    activities,
+    wellnessRange,
+    raceEvents,
+    rideSettings,
+    holidayEvents,
+    remoteAthlete,
+  ] = await Promise.all([
+    intervals.getEvents(eventLookbackStr, endStr),
+    intervals.getActivities(lookbackStr, today),
+    intervals.getTrainingLoadRange(wellnessStr, today),
+    intervals.getEvents(today, raceHorizonStr),
+    intervals.getRideSportSettings(),
+    config.holidays.enabled ? intervals.getEvents(holidayLookbackStr, endStr) : Promise.resolve([]),
+    // The local profile covers this outright in the normal case. When it
+    // doesn't, the account is asked — but a fuelling input must never take
+    // down the plan push the Monday automation depends on, so a failure here
+    // resolves to null and `buildFuelNotes` reports it as a missing input.
+    config.fueling.enabled && !isCompleteProfile(localAthlete)
+      ? intervals.getAthlete().catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.log(`Fuelling: could not read the Intervals.icu profile — ${msg}`);
+          return null;
+        })
+      : Promise.resolve(null),
+  ]);
+  const athlete = mergeAthlete(localAthlete, remoteAthlete);
   const load = latestTrainingLoad(wellnessRange, today);
 
   // eFTP sync before planning: the applied FTP is what Intervals.icu will

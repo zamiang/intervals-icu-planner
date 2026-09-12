@@ -1,0 +1,15 @@
+# Personal anthropometrics for the fuelling model. Copy to `.athlete.yaml`,
+# which is gitignored — this repository is public, and these three fields are
+# the only genuinely identifying inputs the planner uses.
+#
+# Every field is optional. Anything omitted here falls back to the Intervals.icu
+# athlete profile, so this file can hold all three, just the ones the account is
+# missing, or nothing at all. When it supplies all three, the planner skips the
+# profile API call entirely.
+#
+# They feed the Mifflin-St Jeor resting-metabolic-rate estimate, which sets the
+# maintenance figure every fuelling target is derived from.
+
+height_cm: 180.0
+date_of_birth: "1990-01-31" # YYYY-MM-DD
+sex: M # M or F — the RMR constant differs by ~166 kcal/day

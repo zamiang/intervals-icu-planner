@@ -15,8 +15,10 @@ import type { FuelingConfig, IntervalsEvent, PlannedWorkout } from "./types.js";
 // Every number here is an estimate with real error bars — resting metabolic
 // rate from a prediction equation, ride energy from planned (not executed)
 // power. It is a starting point to calibrate against the scale trend, not a
-// measurement. See notes/2026-09-07-diet-block.md for the reasoning and the
-// biweekly adjustment rule that corrects it.
+// measurement; the biweekly adjustment rule that corrects it is documented
+// alongside `daily_deficit_kcal` in config.yaml.
+
+export type Sex = "M" | "F";
 
 export interface FuelDayInput {
   date: string; // YYYY-MM-DD
@@ -24,6 +26,7 @@ export interface FuelDayInput {
   weightKg: number;
   heightCm: number;
   ageYears: number;
+  sex: Sex;
   ftp: number;
 }
 
@@ -45,12 +48,23 @@ export interface FuelTargets {
   isFuelDay: boolean; // true when the day is fuelled at/near maintenance
 }
 
-// Mifflin-St Jeor resting metabolic rate (male). Chosen over Harris-Benedict
-// because it is the better-validated predictor in non-obese adults; it still
-// carries roughly +/-10% individual error, which is why the scale trend — not
-// this number — is the feedback signal that actually governs the block.
-export function restingMetabolicRate(weightKg: number, heightCm: number, ageYears: number): number {
-  return 10 * weightKg + 6.25 * heightCm - 5 * ageYears + 5;
+// Mifflin-St Jeor resting metabolic rate. Chosen over Harris-Benedict because
+// it is the better-validated predictor in non-obese adults; it still carries
+// roughly +/-10% individual error, which is why the scale trend — not this
+// number — is the feedback signal that actually governs the block.
+//
+// The sex constant is a ~166 kcal/day swing that propagates into every target
+// the note prescribes, so it is required rather than defaulted: guessing it
+// wrong is a silent, systematic error in the one number everything else is
+// derived from.
+export function restingMetabolicRate(
+  weightKg: number,
+  heightCm: number,
+  ageYears: number,
+  sex: Sex,
+): number {
+  const base = 10 * weightKg + 6.25 * heightCm - 5 * ageYears;
+  return sex === "F" ? base - 161 : base + 5;
 }
 
 // Planned energy cost of one session.
@@ -104,7 +118,7 @@ function isFuelDay(rideMinutes: number, hardestIf: number | null, cfg: FuelingCo
 }
 
 export function fuelTargetsFor(input: FuelDayInput, cfg: FuelingConfig): FuelTargets {
-  const { date, workouts, weightKg, heightCm, ageYears, ftp } = input;
+  const { date, workouts, weightKg, heightCm, ageYears, sex, ftp } = input;
 
   const rides = workouts.filter((w) => w.type === "cycling" || w.type === "sweet_spot");
   const rideMinutes = rides.reduce((sum, w) => sum + (w.durationMin ?? 0), 0);
@@ -114,7 +128,8 @@ export function fuelTargetsFor(input: FuelDayInput, cfg: FuelingConfig): FuelTar
   const hardestIf = ifs.length > 0 ? Math.max(...ifs) : null;
 
   const exerciseKcal = workouts.reduce((sum, w) => sum + sessionKcal(w, ftp, cfg), 0);
-  const baseKcal = restingMetabolicRate(weightKg, heightCm, ageYears) * cfg.non_exercise_multiplier;
+  const baseKcal =
+    restingMetabolicRate(weightKg, heightCm, ageYears, sex) * cfg.non_exercise_multiplier;
   const maintenanceKcal = Math.round(baseKcal + exerciseKcal);
 
   // Periodized deficit: the weekly average is `daily_deficit_kcal`, but fuel
@@ -238,6 +253,7 @@ export interface FuelContext {
   weightKg: number;
   heightCm: number;
   ageYears: number;
+  sex: Sex;
   ftp: number;
 }
 

@@ -35,7 +35,7 @@ const CFG: FuelingConfig = {
 };
 
 // The athlete this was built for, so the numbers below are the real ones.
-const ATHLETE = { weightKg: 78.4, heightCm: 185.4, ageYears: 40, ftp: 224 };
+const ATHLETE = { weightKg: 75, heightCm: 180, ageYears: 40, sex: "M" as const, ftp: 250 };
 
 function workout(overrides: Partial<PlannedWorkout>): PlannedWorkout {
   return {
@@ -52,27 +52,27 @@ function workout(overrides: Partial<PlannedWorkout>): PlannedWorkout {
 
 describe("restingMetabolicRate", () => {
   it("matches Mifflin-St Jeor for the athlete", () => {
-    // 10(78.4) + 6.25(185.4) - 5(40) + 5
-    expect(restingMetabolicRate(78.4, 185.4, 40)).toBeCloseTo(1747.75, 2);
+    // 10(75) + 6.25(180) - 5(40) + 5
+    expect(restingMetabolicRate(75, 180, 40, "M")).toBeCloseTo(1680, 2);
   });
 });
 
 describe("sessionKcal", () => {
   it("estimates ride energy from planned IF and duration", () => {
-    // avg watts = 0.62 * 224 * 0.9 = 125.0; 125.0 W * 10800 s = 1350 kJ ~ 1350 kcal
-    expect(sessionKcal(workout({ durationMin: 180 }), 224, CFG)).toBe(1350);
+    // avg watts = 0.62 * 250 * 0.9 = 139.5; 139.5 W * 10800 s = 1506.6 kJ ~ 1507 kcal
+    expect(sessionKcal(workout({ durationMin: 180 }), 250, CFG)).toBe(1507);
   });
 
   it("uses a flat hourly rate for strength, which has no power model", () => {
     const w = workout({ type: "weights", durationMin: 60, intensityFactor: undefined });
-    expect(sessionKcal(w, 224, CFG)).toBe(300);
+    expect(sessionKcal(w, 250, CFG)).toBe(300);
   });
 
   it("is zero for rest, travel, and sessions missing duration or intensity", () => {
-    expect(sessionKcal(workout({ type: "rest" }), 224, CFG)).toBe(0);
-    expect(sessionKcal(workout({ type: "travel" }), 224, CFG)).toBe(0);
-    expect(sessionKcal(workout({ durationMin: undefined }), 224, CFG)).toBe(0);
-    expect(sessionKcal(workout({ intensityFactor: undefined }), 224, CFG)).toBe(0);
+    expect(sessionKcal(workout({ type: "rest" }), 250, CFG)).toBe(0);
+    expect(sessionKcal(workout({ type: "travel" }), 250, CFG)).toBe(0);
+    expect(sessionKcal(workout({ durationMin: undefined }), 250, CFG)).toBe(0);
+    expect(sessionKcal(workout({ intensityFactor: undefined }), 250, CFG)).toBe(0);
   });
 });
 
@@ -116,16 +116,16 @@ describe("fuelTargetsFor", () => {
 
   it("sets protein and fat from body weight", () => {
     const t = day([workout({})]);
-    expect(t.proteinG).toBe(172); // 2.2 * 78.4
-    expect(t.fatG).toBe(63); // 0.8 * 78.4
+    expect(t.proteinG).toBe(165); // 2.2 * 75
+    expect(t.fatG).toBe(60); // 0.8 * 75
   });
 
   it("treats a long ride as a fuel day and pulls it back toward maintenance", () => {
     const t = day([workout({ durationMin: 180 })]);
     expect(t.isFuelDay).toBe(true);
-    // base 1747.75 * 1.35 = 2359.46, + 1350 exercise
-    expect(t.maintenanceKcal).toBe(3709);
-    expect(t.kcal).toBe(3709 - (550 - 400));
+    // base 1680 * 1.35 = 2268, + 1507 exercise
+    expect(t.maintenanceKcal).toBe(3775);
+    expect(t.kcal).toBe(3775 - (550 - 400));
   });
 
   it("treats a short easy day as a deficit day and takes the extra", () => {
@@ -144,8 +144,8 @@ describe("fuelTargetsFor", () => {
       workout({ durationMin: 75 }),
       workout({ type: "weights", durationMin: 60, intensityFactor: undefined }),
     ]);
-    // 0.62 * 224 * 0.9 = 124.992 W over 75 min = 562 kcal, plus 300 for strength
-    expect(t.exerciseKcal).toBe(862);
+    // 0.62 * 250 * 0.9 = 139.5 W over 75 min = 628 kcal, plus 300 for strength
+    expect(t.exerciseKcal).toBe(928);
   });
 
   it("never prescribes below the floor, even when the arithmetic says to", () => {
@@ -176,13 +176,13 @@ describe("fuelTargetsFor", () => {
 
 describe("ageOn", () => {
   it("counts the birthday as passed on and after the day", () => {
-    expect(ageOn("1986-04-09", "2026-04-09")).toBe(40);
-    expect(ageOn("1986-04-09", "2026-09-07")).toBe(40);
+    expect(ageOn("1990-06-15", "2026-06-15")).toBe(36);
+    expect(ageOn("1990-06-15", "2026-09-07")).toBe(36);
   });
 
   it("does not count a birthday still ahead this year", () => {
-    expect(ageOn("1986-04-09", "2026-04-08")).toBe(39);
-    expect(ageOn("1986-12-31", "2026-01-01")).toBe(39);
+    expect(ageOn("1990-06-15", "2026-06-14")).toBe(35);
+    expect(ageOn("1990-12-31", "2026-01-01")).toBe(35);
   });
 });
 
@@ -190,11 +190,11 @@ describe("latestWeightKg", () => {
   it("takes the most recent weigh-in, not the most recent day", () => {
     expect(
       latestWeightKg([
-        { date: "2026-08-27", weight: 78.6 },
-        { date: "2026-08-28", weight: 78.3 },
+        { date: "2026-08-27", weight: 75.6 },
+        { date: "2026-08-28", weight: 75.3 },
         { date: "2026-09-01" },
       ]),
-    ).toBe(78.3);
+    ).toBe(75.3);
   });
 
   it("returns null when nothing was ever logged", () => {
@@ -277,7 +277,7 @@ describe("fuel note rendering", () => {
   );
 
   it("names the note with the day's headline numbers", () => {
-    expect(fuelNoteName(targets)).toBe("Fuel 3,559 kcal · 172g protein");
+    expect(fuelNoteName(targets)).toBe("Fuel 3,625 kcal · 165g protein");
   });
 
   it("states the on-bike rate and its session total", () => {

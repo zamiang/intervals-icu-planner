@@ -212,9 +212,11 @@ readiness:
 # planned day alongside the workouts. Numbers are derived from the sessions the
 # scheduler actually placed, so the prescription can never drift out of sync
 # with the plan: a 3-hour Saturday and a rest Monday get different targets
-# automatically. Body weight comes from the latest Intervals.icu weigh-in and
-# height/age from the athlete profile, so nothing here goes stale the way a
-# hand-copied constant would.
+# automatically. Body weight comes from the latest Intervals.icu weigh-in, so
+# nothing here goes stale the way a hand-copied constant would. Height, date of
+# birth and sex come from `.athlete.yaml` — personal enough to keep out of a
+# public repo, so it is gitignored; see .athlete.example.yaml. Anything that
+# file omits falls back to the Intervals.icu athlete profile.
 #
 # The deficit is periodized, not flat. `daily_deficit_kcal` is the nominal
 # week-average; quality and long days give `fuel_day_addback_kcal` of it back
@@ -223,9 +225,19 @@ readiness:
 # every single day; periodizing holds the weekly average without any one day
 # sitting deeply under-fuelled. Because of that reshaping, the *realized*
 # weekly deficit is lower than `daily_deficit_kcal` suggests — 650 here lands
-# near 530/day averaged over a typical week (~0.5 kg/week). Tune this one
-# number from the 7-day rolling weight trend; see the biweekly adjustment rule
-# in notes/2026-09-07-diet-block.md.
+# near 530/day averaged over a typical week (~0.5 kg/week).
+#
+# Tune this one number, every 2 weeks, off the 7-day rolling weight average
+# against the same average two weeks prior — never a single reading:
+#   losing > 0.7 kg/wk  -> add ~200 kcal/day. Too fast is the failure mode,
+#                          not a win: that is the rate that costs lean mass.
+#   losing 0.35-0.7     -> hold. This is the target band.
+#   losing < 0.35 kg/wk -> subtract ~150 kcal/day, after checking that intake
+#                          logging is actually accurate.
+# Expect week 1 to show ~1-1.5 kg of glycogen and its bound water; the real
+# trend starts in week 2. Ignore the scale body-fat percentage entirely —
+# bioimpedance is hydration noise. Stop conditions live with the instruments
+# that measure them: eFTP via `ftp_sync`, HRV/RHR via `readiness` above.
 #
 # start_date/end_date bound the block so a finished cut stops writing notes on
 # its own rather than running forever under the Monday automation. Set
@@ -238,7 +250,7 @@ fueling:
   fuel_day_addback_kcal: 400
   deficit_day_extra_kcal: 150
   min_kcal: 1800 # hard floor — below this is under-eating, not a deficit
-  protein_g_per_kg: 2.2 # ~172 g at 78.4 kg; held constant every day, deficit or not
+  protein_g_per_kg: 2.2 # applied to the live weigh-in; held constant every day, deficit or not
   fat_g_per_kg: 0.8 # hormonal floor, ~63 g
   non_exercise_multiplier: 1.35 # RMR -> maintenance before training is added
   weights_kcal_per_hour: 300 # strength has no power model, so a flat rate
