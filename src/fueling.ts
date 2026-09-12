@@ -1,4 +1,4 @@
-import type { FuelingConfig, IntervalsEvent, PlannedWorkout } from "./types.js";
+import type { FuelingConfig, IntervalsEvent, PlannedWorkout, WorkoutType } from "./types.js";
 
 // Daily fuelling targets: "what should I eat today", derived from the day the
 // scheduler actually planned rather than a fixed weekday table. A 3-hour
@@ -19,6 +19,25 @@ import type { FuelingConfig, IntervalsEvent, PlannedWorkout } from "./types.js";
 // alongside `daily_deficit_kcal` in config.yaml.
 
 export type Sex = "M" | "F";
+
+// Which workout types are ridden — the one place that question is answered, so
+// the ride filter and the energy model can never disagree about a type.
+//
+// Written as a total record of WorkoutType rather than a list of the ones that
+// count: adding a sixth type fails to compile here, which is the point. Costing
+// a new type as a ride by accident is a silent error — it would be fuelled, and
+// its energy folded into the day's target, with nothing to flag it.
+const RIDDEN: Record<WorkoutType, boolean> = {
+  cycling: true,
+  sweet_spot: true,
+  weights: false,
+  rest: false,
+  travel: false,
+};
+
+export function isRide(type: WorkoutType): boolean {
+  return RIDDEN[type];
+}
 
 export interface FuelDayInput {
   date: string; // YYYY-MM-DD
@@ -80,12 +99,26 @@ export function sessionKcal(w: PlannedWorkout, ftp: number, cfg: FuelingConfig):
   const minutes = w.durationMin;
   if (typeof minutes !== "number" || minutes <= 0) return 0;
   const hours = minutes / 60;
-  if (w.type === "weights") return Math.round(cfg.weights_kcal_per_hour * hours);
-  if (w.type === "rest" || w.type === "travel") return 0;
-  const intensityFactor = w.intensityFactor;
-  if (typeof intensityFactor !== "number" || intensityFactor <= 0) return 0;
-  const avgWatts = intensityFactor * ftp * cfg.avg_power_factor;
-  return Math.round((avgWatts * minutes * 60) / 1000);
+  // Exhaustive on WorkoutType: a new type has to state its own energy cost here
+  // rather than inheriting the ride model by falling through.
+  switch (w.type) {
+    case "weights":
+      return Math.round(cfg.weights_kcal_per_hour * hours);
+    case "rest":
+    case "travel":
+      return 0;
+    case "cycling":
+    case "sweet_spot": {
+      const intensityFactor = w.intensityFactor;
+      if (typeof intensityFactor !== "number" || intensityFactor <= 0) return 0;
+      const avgWatts = intensityFactor * ftp * cfg.avg_power_factor;
+      return Math.round((avgWatts * minutes * 60) / 1000);
+    }
+    default: {
+      const unreachable: never = w.type;
+      throw new Error(`unhandled workout type: ${String(unreachable)}`);
+    }
+  }
 }
 
 // On-bike carbohydrate rate for the day's riding.
@@ -120,7 +153,7 @@ function isFuelDay(rideMinutes: number, hardestIf: number | null, cfg: FuelingCo
 export function fuelTargetsFor(input: FuelDayInput, cfg: FuelingConfig): FuelTargets {
   const { date, workouts, weightKg, heightCm, ageYears, sex, ftp } = input;
 
-  const rides = workouts.filter((w) => w.type === "cycling" || w.type === "sweet_spot");
+  const rides = workouts.filter((w) => isRide(w.type));
   const rideMinutes = rides.reduce((sum, w) => sum + (w.durationMin ?? 0), 0);
   const ifs = rides
     .map((w) => w.intensityFactor)

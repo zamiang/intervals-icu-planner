@@ -9,6 +9,7 @@ import {
   isWithinBlock,
   latestWeightKg,
   restingMetabolicRate,
+  isRide,
   sessionKcal,
 } from "../src/fueling.js";
 import type { FuelingConfig, PlannedWorkout } from "../src/types.js";
@@ -54,6 +55,16 @@ describe("restingMetabolicRate", () => {
   it("matches Mifflin-St Jeor for the athlete", () => {
     // 10(75) + 6.25(180) - 5(40) + 5
     expect(restingMetabolicRate(75, 180, 40, "M")).toBeCloseTo(1680, 2);
+  });
+});
+
+describe("isRide", () => {
+  it("counts the two ride types and nothing else", () => {
+    expect(isRide("cycling")).toBe(true);
+    expect(isRide("sweet_spot")).toBe(true);
+    expect(isRide("weights")).toBe(false);
+    expect(isRide("rest")).toBe(false);
+    expect(isRide("travel")).toBe(false);
   });
 });
 
