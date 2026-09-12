@@ -15,3 +15,6 @@ dist/
 ref/
 strength-workout/
 notes/
+
+# Personal anthropometrics for the fuelling model (see .athlete.example.yaml)
+.athlete.yaml

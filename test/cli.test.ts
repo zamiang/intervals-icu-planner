@@ -9,8 +9,16 @@ import {
   weeksUntil,
   latestTrainingLoad,
   pushPlan,
+  buildFuelNotes,
+  pushFuelNotes,
 } from "../src/cli.js";
-import type { PlannedWorkout, WellnessEntry, IntervalsEvent } from "../src/types.js";
+import type {
+  Config,
+  FuelingConfig,
+  PlannedWorkout,
+  WellnessEntry,
+  IntervalsEvent,
+} from "../src/types.js";
 
 describe("parseArgs", () => {
   it("parses 'plan' command", () => {
@@ -484,5 +492,189 @@ describe("pushPlan", () => {
     expect(createEvent).toHaveBeenCalledTimes(2);
     expect(result.created).toHaveLength(1);
     expect(result.failed).toEqual([{ date: "2026-06-08", name: "Easy Ride", error: "503 boom" }]);
+  });
+});
+
+describe("buildFuelNotes", () => {
+  const FUELING: FuelingConfig = {
+    enabled: true,
+    start_date: null,
+    end_date: null,
+    daily_deficit_kcal: 550,
+    fuel_day_addback_kcal: 400,
+    deficit_day_extra_kcal: 150,
+    min_kcal: 1800,
+    protein_g_per_kg: 2.2,
+    fat_g_per_kg: 0.8,
+    non_exercise_multiplier: 1.35,
+    weights_kcal_per_hour: 300,
+    avg_power_factor: 0.9,
+    low_carb_max_minutes: 90,
+    hard_min_if: 0.75,
+    long_min_minutes: 150,
+    hard_carb_g_per_hour: [30, 60],
+    moderate_carb_g_per_hour: [60, 75],
+    long_carb_g_per_hour: [60, 90],
+  };
+  // buildFuelNotes reads only `config.fueling`; the rest of Config is irrelevant
+  // here and a full literal would obscure what each case is actually varying.
+  const configWith = (fueling: Partial<FuelingConfig> = {}): Config =>
+    ({ fueling: { ...FUELING, ...fueling } }) as Config;
+
+  const ATHLETE = { heightCm: 180, dateOfBirth: "1990-06-15", sex: "M" };
+  const WELLNESS: WellnessEntry[] = [
+    { date: "2026-09-27", ctl: 40, atl: 40, tsb: 0, weight: 75 },
+  ] as WellnessEntry[];
+  const PLAN: PlannedWorkout[] = [
+    {
+      date: "2026-09-28",
+      type: "cycling",
+      name: "Easy Ride",
+      description: "z2",
+      intensity: "easy",
+      durationMin: 75,
+      intensityFactor: 0.62,
+    },
+  ];
+  const OPTS = { today: "2026-09-28", existing: [] as IntervalsEvent[] };
+
+  it("builds a note per planned day when every input is present", () => {
+    const notes = buildFuelNotes(configWith(), PLAN, WELLNESS, ATHLETE, 250, OPTS, () => {});
+    expect(notes).toHaveLength(1);
+    expect(notes[0].category).toBe("NOTE");
+    expect(notes[0].name).toMatch(/^Fuel /);
+  });
+
+  it("returns nothing when the block is disabled", () => {
+    const notes = buildFuelNotes(
+      configWith({ enabled: false }),
+      PLAN,
+      WELLNESS,
+      ATHLETE,
+      250,
+      OPTS,
+      () => {},
+    );
+    expect(notes).toEqual([]);
+  });
+
+  // Each of these is an input the Monday automation can plausibly lose. None
+  // may throw: the plan push has to survive a missing fuelling input.
+  it.each([
+    ["weight", { wellness: [{ date: "2026-09-27", ctl: 40, atl: 40, tsb: 0 }] }, /weight/],
+    ["height", { athlete: { ...ATHLETE, heightCm: null } }, /height/],
+    ["date of birth", { athlete: { ...ATHLETE, dateOfBirth: null } }, /date of birth/],
+    ["sex", { athlete: { ...ATHLETE, sex: null } }, /sex/],
+    ["the whole profile", { athlete: null }, /height/],
+    ["FTP", { ftp: null }, /FTP/],
+  ])("skips and logs when %s is missing", (_label, override, expected) => {
+    const o = override as {
+      wellness?: WellnessEntry[];
+      athlete?: typeof ATHLETE | null;
+      ftp?: number | null;
+    };
+    const logged: string[] = [];
+    const notes = buildFuelNotes(
+      configWith(),
+      PLAN,
+      o.wellness ?? WELLNESS,
+      "athlete" in o ? (o.athlete ?? null) : ATHLETE,
+      "ftp" in o ? (o.ftp as number | null) : 250,
+      OPTS,
+      (m) => logged.push(m),
+    );
+    expect(notes).toEqual([]);
+    expect(logged.join("\n")).toMatch(expected);
+  });
+
+  it("treats a sex the profile reports in some other form as absent, not as male", () => {
+    const logged: string[] = [];
+    const notes = buildFuelNotes(
+      configWith(),
+      PLAN,
+      WELLNESS,
+      { ...ATHLETE, sex: "unspecified" },
+      250,
+      OPTS,
+      (m) => logged.push(m),
+    );
+    expect(notes).toEqual([]);
+    expect(logged.join("\n")).toMatch(/sex/);
+  });
+
+  // A NOTE doesn't lock its day the way a workout does, so without this
+  // re-running `plan` would stack duplicates.
+  it("drops days that already carry a fuel note", () => {
+    const existing: IntervalsEvent[] = [
+      {
+        start_date_local: "2026-09-28T00:00:00",
+        name: "Fuel 3,000 kcal · 165g protein",
+        category: "NOTE",
+        type: "Note",
+        description: "",
+      },
+    ];
+    const notes = buildFuelNotes(
+      configWith(),
+      PLAN,
+      WELLNESS,
+      ATHLETE,
+      250,
+      { ...OPTS, existing },
+      () => {},
+    );
+    expect(notes).toEqual([]);
+  });
+
+  it("leaves the day alone when the existing NOTE is something else", () => {
+    const existing: IntervalsEvent[] = [
+      {
+        start_date_local: "2026-09-28T00:00:00",
+        name: "Race week reminder",
+        category: "NOTE",
+        type: "Note",
+        description: "",
+      },
+    ];
+    const notes = buildFuelNotes(
+      configWith(),
+      PLAN,
+      WELLNESS,
+      ATHLETE,
+      250,
+      { ...OPTS, existing },
+      () => {},
+    );
+    expect(notes).toHaveLength(1);
+  });
+});
+
+describe("pushFuelNotes", () => {
+  const note: IntervalsEvent = {
+    start_date_local: "2026-09-28T00:00:00",
+    name: "Fuel 3,000 kcal · 165g protein",
+    category: "NOTE",
+    type: "Note",
+    description: "",
+  };
+
+  it("creates every note", async () => {
+    const createEvent = vi.fn().mockResolvedValue({});
+    const result = await pushFuelNotes({ createEvent }, [note, note], () => {});
+    expect(createEvent).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ created: 2, failed: 0 });
+  });
+
+  // The week's workouts have already landed by this point, so a failed note
+  // must be recorded rather than thrown.
+  it("records a failure instead of throwing, and keeps going", async () => {
+    const createEvent = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("422 boom"))
+      .mockResolvedValueOnce({});
+    const logged: string[] = [];
+    const result = await pushFuelNotes({ createEvent }, [note, note], (m) => logged.push(m));
+    expect(result).toEqual({ created: 1, failed: 1 });
+    expect(logged.join("\n")).toMatch(/422 boom/);
   });
 });

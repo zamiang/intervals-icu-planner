@@ -8,8 +8,13 @@ import { todayLocal, addLocalDays } from "./dates.js";
 import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zones.js";
 import { structuredWorkoutFor } from "./workout.js";
 import { latestEftp, renderTargets, syncFtp } from "./ftp.js";
+import { ageOn, fuelNoteEvents, latestWeightKg } from "./fueling.js";
+import type { Sex } from "./fueling.js";
+import { ATHLETE_FILE, isCompleteProfile, loadLocalAthlete, mergeAthlete } from "./athlete.js";
 import { holidayDatesInWindow } from "./holidays.js";
+import type { AthleteProfile } from "./intervals.js";
 import type {
+  Config,
   PlannedWorkout,
   IntervalsEvent,
   WellnessEntry,
@@ -230,6 +235,90 @@ export async function pushPlan(
   return { created, failed };
 }
 
+// Daily fuelling notes for the planned week.
+//
+// Returns [] rather than throwing when an input is missing: a fuelling note is
+// an accessory to the week, and a missing weigh-in must never take down the
+// plan push that the Monday automation depends on. The reason is logged so a
+// silently-absent note is still diagnosable.
+export function buildFuelNotes(
+  config: Config,
+  planned: PlannedWorkout[],
+  wellnessRange: WellnessEntry[],
+  athlete: AthleteProfile | null,
+  ftp: number | null,
+  opts: { today: string; existing: IntervalsEvent[] },
+  log: (msg: string) => void = console.log,
+): IntervalsEvent[] {
+  const cfg = config.fueling;
+  if (!cfg.enabled) return [];
+
+  const weightKg = latestWeightKg(wellnessRange);
+  const heightCm = athlete?.heightCm ?? null;
+  const dob = athlete?.dateOfBirth ?? null;
+  // Normalized on the way in by both sources, but the profile endpoint can
+  // return anything, so anything other than M/F is treated as absent rather
+  // than silently costed as male.
+  const raw = athlete?.sex?.toUpperCase();
+  const sex: Sex | null = raw === "M" || raw === "F" ? raw : null;
+  const source = `${ATHLETE_FILE} or the Intervals.icu profile`;
+  const missing: string[] = [];
+  if (weightKg === null) missing.push("no logged weight in the wellness window");
+  if (heightCm === null) missing.push(`no height in ${source}`);
+  if (dob === null) missing.push(`no date of birth in ${source}`);
+  if (sex === null) missing.push(`no sex in ${source}`);
+  if (ftp === null || ftp <= 0) missing.push("no FTP in the Ride sport settings");
+  if (
+    missing.length > 0 ||
+    weightKg === null ||
+    heightCm === null ||
+    dob === null ||
+    !sex ||
+    !ftp
+  ) {
+    log(`Fuelling: skipped — ${missing.join("; ")}`);
+    return [];
+  }
+
+  const notes = fuelNoteEvents(
+    planned,
+    { weightKg, heightCm, ageYears: ageOn(dob, opts.today), sex, ftp },
+    cfg,
+  );
+  // A NOTE doesn't lock its day the way a workout does, so re-running `plan`
+  // would stack duplicates without this.
+  const alreadyNoted = new Set(
+    opts.existing
+      .filter((e) => e.category === "NOTE" && e.name.startsWith("Fuel "))
+      .map((e) => e.start_date_local.slice(0, 10)),
+  );
+  return notes.filter((n) => !alreadyNoted.has(n.start_date_local.slice(0, 10)));
+}
+
+// Push the fuelling notes, recording rather than throwing on failure: the
+// week's workouts have already landed by this point and a failed note must not
+// mark the whole run as failed.
+export async function pushFuelNotes(
+  intervals: { createEvent: (e: IntervalsEvent) => Promise<unknown> },
+  notes: IntervalsEvent[],
+  log: (msg: string) => void = console.log,
+): Promise<{ created: number; failed: number }> {
+  let created = 0;
+  let failed = 0;
+  for (const note of notes) {
+    try {
+      await intervals.createEvent(note);
+      created++;
+    } catch (err) {
+      failed++;
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`  FAILED:  ${note.start_date_local.slice(0, 10)} — fuelling note — ${msg}`);
+    }
+  }
+  if (created > 0) log(`  Created: ${created} fuelling note(s).`);
+  return { created, failed };
+}
+
 async function runCheck(intervals: IntervalsClient): Promise<number> {
   const today = todayLocal();
   let failures = 0;
@@ -343,17 +432,38 @@ async function main() {
   // covers this week would be invisible to the planning-window fetch.
   const holidayLookbackStr = addLocalDays(today, -config.holidays.lookback_days);
 
-  const [events, activities, wellnessRange, raceEvents, rideSettings, holidayEvents] =
-    await Promise.all([
-      intervals.getEvents(eventLookbackStr, endStr),
-      intervals.getActivities(lookbackStr, today),
-      intervals.getTrainingLoadRange(wellnessStr, today),
-      intervals.getEvents(today, raceHorizonStr),
-      intervals.getRideSportSettings(),
-      config.holidays.enabled
-        ? intervals.getEvents(holidayLookbackStr, endStr)
-        : Promise.resolve([]),
-    ]);
+  // Read before the fan-out: whether the profile endpoint is called at all
+  // depends on what the local file already supplies.
+  const localAthlete = await loadLocalAthlete();
+
+  const [
+    events,
+    activities,
+    wellnessRange,
+    raceEvents,
+    rideSettings,
+    holidayEvents,
+    remoteAthlete,
+  ] = await Promise.all([
+    intervals.getEvents(eventLookbackStr, endStr),
+    intervals.getActivities(lookbackStr, today),
+    intervals.getTrainingLoadRange(wellnessStr, today),
+    intervals.getEvents(today, raceHorizonStr),
+    intervals.getRideSportSettings(),
+    config.holidays.enabled ? intervals.getEvents(holidayLookbackStr, endStr) : Promise.resolve([]),
+    // The local profile covers this outright in the normal case. When it
+    // doesn't, the account is asked — but a fuelling input must never take
+    // down the plan push the Monday automation depends on, so a failure here
+    // resolves to null and `buildFuelNotes` reports it as a missing input.
+    config.fueling.enabled && !isCompleteProfile(localAthlete)
+      ? intervals.getAthlete().catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.log(`Fuelling: could not read the Intervals.icu profile — ${msg}`);
+          return null;
+        })
+      : Promise.resolve(null),
+  ]);
+  const athlete = mergeAthlete(localAthlete, remoteAthlete);
   const load = latestTrainingLoad(wellnessRange, today);
 
   // eFTP sync before planning: the applied FTP is what Intervals.icu will
@@ -439,6 +549,19 @@ async function main() {
   console.log(`\nWeekly planned load: ${weeklyPlannedTss(planned)} TSS`);
   console.log();
 
+  // Daily fuelling notes. Built from the same `planned` week so the
+  // prescription can't drift from the plan, and skipped entirely when the block
+  // is off or its window has passed. Days that already carry a fuel note are
+  // dropped so re-running `plan` is idempotent — unlike workouts, a NOTE
+  // doesn't lock its day, so nothing else prevents a duplicate.
+  const fuelNotes = buildFuelNotes(config, planned, wellnessRange, athlete, renderValues.ftp, {
+    today,
+    existing: events,
+  });
+  if (fuelNotes.length > 0) {
+    console.log(`Fuelling: ${fuelNotes.length} daily note(s) — ${fuelNotes[0].name}`);
+  }
+
   if (dryRun) {
     console.log("(dry run — nothing pushed to Intervals.icu)");
     return;
@@ -446,6 +569,7 @@ async function main() {
 
   console.log("Pushing to Intervals.icu...");
   const { created, failed } = await pushPlan(intervals, planned);
+  await pushFuelNotes(intervals, fuelNotes);
   if (failed.length === 0) {
     console.log(`Done. Created ${created.length} event(s).`);
   } else {
