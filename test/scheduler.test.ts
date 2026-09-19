@@ -65,6 +65,7 @@ const BASE_CONFIG: Config = {
     moderate_carb_g_per_hour: [60, 75],
     long_carb_g_per_hour: [60, 90],
     caffeine_mg_per_kg: 0,
+    meals: { deficit_day: [], fuel_day: [], fuelled_ride: [] },
   },
   load_targets: {
     easy_if: 0.62,

@@ -237,12 +237,25 @@ weight_training_cut:
   description: "Same loads, fewer sets"
 fueling:
   caffeine_mg_per_kg: 3
+  meals:
+    deficit_day: ["Yogurt bowl, no granola"]
 `;
     await fs.writeFile(file, yaml);
     const config = await loadConfig(file);
     expect(config.weight_training_cut?.name).toBe("Cut Lift");
     expect(config.scheduling.hard_zone_focus).toBe("vo2");
     expect(config.fueling.caffeine_mg_per_kg).toBe(3);
+    expect(config.fueling.meals).toEqual({
+      deficit_day: ["Yogurt bowl, no granola"],
+      fuel_day: [],
+      fuelled_ride: [],
+    });
+  });
+
+  it("rejects meal templates that are not lists of strings", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(file, VALID_YAML + "\nfueling:\n  meals:\n    fuel_day: 3\n");
+    await expect(loadConfig(file)).rejects.toThrow("fueling.meals.fuel_day");
   });
 
   it("defaults hard_zone_focus to null and caffeine off", async () => {

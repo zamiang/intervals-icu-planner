@@ -112,6 +112,16 @@ export interface FuelingConfig {
   moderate_carb_g_per_hour: [number, number]; // default [60, 75]
   long_carb_g_per_hour: [number, number]; // default [60, 90]
   caffeine_mg_per_kg: number; // default 0 (off) — pre-session caffeine cue on quality days, mg per kg bodyweight
+  meals: MealTemplates; // default all empty — suggested meals printed in the fuel note
+}
+
+// Suggested meals for the fuel note, one line each. Which list prints is
+// decided by the same classification that sets the day's calories, so the
+// meals and the number can't disagree. Empty lists print nothing.
+export interface MealTemplates {
+  deficit_day: string[]; // rest and easy days
+  fuel_day: string[]; // quality and long-ride days
+  fuelled_ride: string[]; // extra lines on any day with an on-bike carb target (bottle recipe, recovery)
 }
 
 export interface Config {

@@ -35,6 +35,7 @@ const CFG: FuelingConfig = {
   moderate_carb_g_per_hour: [60, 75],
   long_carb_g_per_hour: [60, 90],
   caffeine_mg_per_kg: 0,
+  meals: { deficit_day: [], fuel_day: [], fuelled_ride: [] },
 };
 
 // The athlete this was built for, so the numbers below are the real ones.
@@ -341,5 +342,43 @@ describe("caffeine cue", () => {
 
   it("is off when caffeine_mg_per_kg is 0", () => {
     expect(caffeineDose(75, 0.88, CFG)).toBeNull();
+  });
+});
+
+describe("meal templates in the fuel note", () => {
+  const meals = {
+    deficit_day: ["Breakfast: yogurt, no granola"],
+    fuel_day: ["Breakfast: yogurt + granola"],
+    fuelled_ride: ["Bottle: 80g carb + salt"],
+  };
+
+  it("prints the fuel-day meals and ride fuel on a long ride day", () => {
+    const t = fuelTargetsFor(
+      { date: "2026-10-03", workouts: [workout({ durationMin: 180 })], ...ATHLETE },
+      CFG,
+    );
+    const text = fuelNoteDescription(t, meals);
+    expect(text).toContain("Meals:\n- Breakfast: yogurt + granola");
+    expect(text).toContain("Ride fuel:\n- Bottle: 80g carb + salt");
+    expect(text).not.toContain("no granola");
+  });
+
+  it("prints the deficit-day meals and no ride fuel on a short easy day", () => {
+    const t = fuelTargetsFor(
+      { date: "2026-09-30", workouts: [workout({ durationMin: 75 })], ...ATHLETE },
+      CFG,
+    );
+    const text = fuelNoteDescription(t, meals);
+    expect(text).toContain("- Breakfast: yogurt, no granola");
+    expect(text).not.toContain("Ride fuel:");
+  });
+
+  it("prints no meal section when the templates are empty or absent", () => {
+    const t = fuelTargetsFor(
+      { date: "2026-09-30", workouts: [workout({ durationMin: 75 })], ...ATHLETE },
+      CFG,
+    );
+    expect(fuelNoteDescription(t)).not.toContain("Meals:");
+    expect(fuelNoteDescription(t, CFG.meals)).not.toContain("Meals:");
   });
 });

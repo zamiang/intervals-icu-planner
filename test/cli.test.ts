@@ -516,6 +516,7 @@ describe("buildFuelNotes", () => {
     moderate_carb_g_per_hour: [60, 75],
     long_carb_g_per_hour: [60, 90],
     caffeine_mg_per_kg: 0,
+    meals: { deficit_day: [], fuel_day: [], fuelled_ride: [] },
   };
   // buildFuelNotes reads only `config.fueling`; the rest of Config is irrelevant
   // here and a full literal would obscure what each case is actually varying.

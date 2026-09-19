@@ -1,4 +1,10 @@
-import type { FuelingConfig, IntervalsEvent, PlannedWorkout, WorkoutType } from "./types.js";
+import type {
+  FuelingConfig,
+  IntervalsEvent,
+  MealTemplates,
+  PlannedWorkout,
+  WorkoutType,
+} from "./types.js";
 
 // Daily fuelling targets: "what should I eat today", derived from the day the
 // scheduler actually planned rather than a fixed weekday table. A 3-hour
@@ -229,7 +235,7 @@ export function fuelNoteName(t: FuelTargets): string {
   return `Fuel ${num(t.kcal)} kcal · ${t.proteinG}g protein`;
 }
 
-export function fuelNoteDescription(t: FuelTargets): string {
+export function fuelNoteDescription(t: FuelTargets, meals?: MealTemplates): string {
   const lines: string[] = [];
   lines.push(`${num(t.kcal)} kcal · ${t.proteinG}g protein · ${t.carbG}g carb · ${t.fatG}g fat.`);
   lines.push("");
@@ -264,6 +270,18 @@ export function fuelNoteDescription(t: FuelTargets): string {
       ? "Fuel day — at or near maintenance. The session is the point; feed it."
       : "Deficit day — this is where the week's deficit is taken.",
   );
+  const mealLines = meals ? (t.isFuelDay ? meals.fuel_day : meals.deficit_day) : [];
+  if (mealLines.length > 0) {
+    lines.push("");
+    lines.push("Meals:");
+    for (const m of mealLines) lines.push(`- ${m}`);
+  }
+  if (meals && t.onBikeCarb && meals.fuelled_ride.length > 0) {
+    lines.push("");
+    lines.push("Ride fuel:");
+    for (const m of meals.fuelled_ride) lines.push(`- ${m}`);
+  }
+  lines.push("");
   lines.push(
     `Protein in 4 feedings of ~${Math.round(t.proteinG / 4)}g — make the last one casein ` +
       `(Greek yogurt, skyr, cottage cheese) before sleep.`,
@@ -345,7 +363,7 @@ export function fuelNoteEvents(
         name: fuelNoteName(targets),
         category: "NOTE",
         type: "Note",
-        description: fuelNoteDescription(targets),
+        description: fuelNoteDescription(targets, cfg.meals),
       };
     });
 }

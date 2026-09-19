@@ -7,6 +7,7 @@ import type {
   HardZone,
   HolidaysConfig,
   LoadTargetsConfig,
+  MealTemplates,
   PeriodizationConfig,
   ReadinessConfig,
   SchedulingConfig,
@@ -74,6 +75,7 @@ const FUELING_DEFAULTS: FuelingConfig = {
   moderate_carb_g_per_hour: [60, 75],
   long_carb_g_per_hour: [60, 90],
   caffeine_mg_per_kg: 0,
+  meals: { deficit_day: [], fuel_day: [], fuelled_ride: [] },
 };
 
 const READINESS_DEFAULTS: ReadinessConfig = {
@@ -243,6 +245,23 @@ function validateFueling(raw: unknown): Partial<FuelingConfig> {
       throw new Error(`fueling.${field} must be a number`);
     }
     out[field] = obj[field] as number;
+  }
+
+  if (obj.meals !== undefined && obj.meals !== null) {
+    if (typeof obj.meals !== "object" || Array.isArray(obj.meals)) {
+      throw new Error("fueling.meals must be an object");
+    }
+    const m = obj.meals as Record<string, unknown>;
+    const meals: MealTemplates = { deficit_day: [], fuel_day: [], fuelled_ride: [] };
+    for (const key of Object.keys(meals) as (keyof MealTemplates)[]) {
+      const v = m[key];
+      if (v === undefined || v === null) continue;
+      if (!Array.isArray(v) || !v.every((line) => typeof line === "string")) {
+        throw new Error(`fueling.meals.${key} must be a list of strings`);
+      }
+      meals[key] = v as string[];
+    }
+    out.meals = meals;
   }
 
   const rangeFields = [

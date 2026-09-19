@@ -331,3 +331,26 @@ fueling:
   # is the dose the evidence supports; easy and long-but-easy days get none, so
   # the cost to sleep is paid only where it buys session quality. 0 disables.
   caffeine_mg_per_kg: 3
+  # Suggested meals printed in each day's fuel note — the list is picked by the
+  # same fuel-day / deficit-day call that sets the calories, so the menu always
+  # matches the number. Protein is the same (~40 g x 4) on both; carbs are what
+  # move. Each line is a template, not a prescription: swap in anything with
+  # the same protein and roughly the same calories. Empty lists print nothing.
+  meals:
+    deficit_day:
+      - "Breakfast (~420 kcal, 50 g P): 250 g 2% Greek yogurt + 1 scoop whey + 150 g berries + 1 tbsp chia. No granola."
+      - "Lunch (~670 kcal, 55 g P): 150 g pork tenderloin + 150 g black beans + 100 g cooked rice, slaw, salsa, 1/2 avocado."
+      - "Dinner (~620 kcal, 46 g P): 170 g salmon + 75 g edamame + 100 g cooked rice, cucumber; soy, rice vinegar, 1 measured tsp sesame oil."
+      - "Evening (~220 kcal, 27 g P): 250 g skyr + cocoa + cinnamon + 10 g dark chocolate. This is the casein feeding."
+      - "Swap for lunch or dinner: chicken Caesar with a Greek-yogurt dressing (~480 kcal, 60 g P), croutons skipped."
+      - "Measure every oil and dressing with a spoon, and log it."
+    fuel_day:
+      - "Breakfast (~640 kcal, 50 g P): Greek yogurt + whey + berries + chia, plus 40 g granola and honey."
+      - "Lunch (~870 kcal, 55 g P): pork + black beans bowl with 250 g cooked rice."
+      - "Dinner (~810 kcal, 46 g P): salmon + edamame bowl with 250 g cooked rice, plus bread."
+      - "Evening (~220 kcal, 27 g P): 250 g skyr + cocoa + 10 g dark chocolate."
+      - "Carbs before the session; do not save calories on a quality day."
+    fuelled_ride:
+      - "Bottle (~320 kcal, 80 g carb): 50 g maltodextrin + 30 g fructose (or 80 g sugar) + 1/4 tsp salt in 750 ml."
+      - "Long ride: one bottle per hour, or bottles plus a gel or rice cake. Four hours means four bottles."
+      - "Recovery within the hour (~500 kcal, 40 g P): bagel + 2 eggs + 2 egg whites + 60 g smoked salmon."
