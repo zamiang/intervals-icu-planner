@@ -65,6 +65,7 @@ export interface FuelTargets {
   onBikeCarb: CarbRate | null; // null when nothing is ridden, or the ride is a deliberate low-carb day
   rideMinutes: number;
   isFuelDay: boolean; // true when the day is fuelled at/near maintenance
+  caffeineMg: number | null; // pre-session caffeine on quality days; null on other days or when disabled
 }
 
 // Mifflin-St Jeor resting metabolic rate. Chosen over Harris-Benedict because
@@ -150,6 +151,21 @@ function isFuelDay(rideMinutes: number, hardestIf: number | null, cfg: FuelingCo
   return hardestIf !== null && hardestIf >= cfg.hard_min_if;
 }
 
+// Pre-session caffeine, only before quality work: ~3 mg/kg 30-60 min out is
+// the best-evidenced legal ergogenic there is, but it is spent on the sessions
+// whose quality it protects, not on easy spins where it only costs sleep —
+// and sleep is what decides whether a deficit comes off fat or muscle.
+// Rounded to 5 mg so the note reads as a dose, not a calculation.
+export function caffeineDose(
+  weightKg: number,
+  hardestIf: number | null,
+  cfg: FuelingConfig,
+): number | null {
+  if (cfg.caffeine_mg_per_kg <= 0) return null;
+  if (hardestIf === null || hardestIf < cfg.hard_min_if) return null;
+  return Math.round((cfg.caffeine_mg_per_kg * weightKg) / 5) * 5;
+}
+
 export function fuelTargetsFor(input: FuelDayInput, cfg: FuelingConfig): FuelTargets {
   const { date, workouts, weightKg, heightCm, ageYears, sex, ftp } = input;
 
@@ -197,6 +213,7 @@ export function fuelTargetsFor(input: FuelDayInput, cfg: FuelingConfig): FuelTar
     onBikeCarb: carbRate(rideMinutes, hardestIf, cfg),
     rideMinutes,
     isFuelDay: fuelDay,
+    caffeineMg: caffeineDose(weightKg, hardestIf, cfg),
   };
 }
 
@@ -234,6 +251,13 @@ export function fuelNoteDescription(t: FuelTargets): string {
     );
   }
 
+  if (t.caffeineMg !== null) {
+    lines.push(
+      `Caffeine: ~${t.caffeineMg} mg 30-60 min before the session. None after ~2 pm — ` +
+        `sleep is what keeps a deficit coming off fat rather than muscle.`,
+    );
+  }
+
   lines.push("");
   lines.push(
     t.isFuelDay
@@ -241,7 +265,8 @@ export function fuelNoteDescription(t: FuelTargets): string {
       : "Deficit day — this is where the week's deficit is taken.",
   );
   lines.push(
-    `Protein in 4 feedings of ~${Math.round(t.proteinG / 4)}g, plus ~40g casein before sleep.`,
+    `Protein in 4 feedings of ~${Math.round(t.proteinG / 4)}g — make the last one casein ` +
+      `(Greek yogurt, skyr, cottage cheese) before sleep.`,
   );
   lines.push("");
   lines.push(
