@@ -4,13 +4,17 @@ import type {
   Config,
   FtpSyncConfig,
   FuelingConfig,
+  HardZone,
   HolidaysConfig,
   LoadTargetsConfig,
+  MealTemplates,
   PeriodizationConfig,
   ReadinessConfig,
   SchedulingConfig,
   WorkoutDefinition,
 } from "./types.js";
+
+const HARD_ZONES: readonly HardZone[] = ["threshold", "vo2", "anaerobic"];
 
 const SCHEDULING_DEFAULTS: SchedulingConfig = {
   tsb_fresh: 5,
@@ -22,6 +26,7 @@ const SCHEDULING_DEFAULTS: SchedulingConfig = {
   min_weight_gap_days: 2,
   max_weekly_ramp_pct: 7,
   hard_cycling_days: 1,
+  hard_zone_focus: null,
 };
 
 const PERIODIZATION_DEFAULTS: PeriodizationConfig = {
@@ -69,6 +74,8 @@ const FUELING_DEFAULTS: FuelingConfig = {
   hard_carb_g_per_hour: [30, 60],
   moderate_carb_g_per_hour: [60, 75],
   long_carb_g_per_hour: [60, 90],
+  caffeine_mg_per_kg: 0,
+  meals: { deficit_day: [], fuel_day: [], fuelled_ride: [] },
 };
 
 const READINESS_DEFAULTS: ReadinessConfig = {
@@ -93,7 +100,7 @@ function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
   }
   const obj = raw as Record<string, unknown>;
   const out: Partial<SchedulingConfig> = {};
-  const numericFields: (keyof SchedulingConfig)[] = [
+  const numericFields: Exclude<keyof SchedulingConfig, "hard_zone_focus">[] = [
     "tsb_fresh",
     "tsb_fatigued",
     "tsb_very_fatigued",
@@ -110,6 +117,15 @@ function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
       throw new Error(`scheduling.${field} must be a number`);
     }
     out[field] = obj[field] as number;
+  }
+  if (obj.hard_zone_focus !== undefined) {
+    const v = obj.hard_zone_focus;
+    if (v !== null && !HARD_ZONES.includes(v as HardZone)) {
+      throw new Error(
+        `scheduling.hard_zone_focus must be null or one of: ${HARD_ZONES.join(", ")}`,
+      );
+    }
+    out.hard_zone_focus = v as HardZone | null;
   }
   return out;
 }
@@ -221,6 +237,7 @@ function validateFueling(raw: unknown): Partial<FuelingConfig> {
     "low_carb_max_minutes",
     "hard_min_if",
     "long_min_minutes",
+    "caffeine_mg_per_kg",
   ] as const;
   for (const field of numericFields) {
     if (obj[field] === undefined) continue;
@@ -228,6 +245,23 @@ function validateFueling(raw: unknown): Partial<FuelingConfig> {
       throw new Error(`fueling.${field} must be a number`);
     }
     out[field] = obj[field] as number;
+  }
+
+  if (obj.meals !== undefined && obj.meals !== null) {
+    if (typeof obj.meals !== "object" || Array.isArray(obj.meals)) {
+      throw new Error("fueling.meals must be an object");
+    }
+    const m = obj.meals as Record<string, unknown>;
+    const meals: MealTemplates = { deficit_day: [], fuel_day: [], fuelled_ride: [] };
+    for (const key of Object.keys(meals) as (keyof MealTemplates)[]) {
+      const v = m[key];
+      if (v === undefined || v === null) continue;
+      if (!Array.isArray(v) || !v.every((line) => typeof line === "string")) {
+        throw new Error(`fueling.meals.${key} must be a list of strings`);
+      }
+      meals[key] = v as string[];
+    }
+    out.meals = meals;
   }
 
   const rangeFields = [
@@ -367,6 +401,10 @@ export async function loadConfig(filePath: string): Promise<Config> {
     doc.weight_training_taper,
     "weight_training_taper",
   );
+  const weight_training_cut = validateOptionalWorkout(
+    doc.weight_training_cut,
+    "weight_training_cut",
+  );
 
   const scheduling: SchedulingConfig = {
     ...SCHEDULING_DEFAULTS,
@@ -438,6 +476,7 @@ export async function loadConfig(filePath: string): Promise<Config> {
   return {
     weight_training,
     weight_training_taper,
+    weight_training_cut,
     sweet_spot,
     scheduling,
     load_targets,

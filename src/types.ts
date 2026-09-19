@@ -19,7 +19,12 @@ export interface SchedulingConfig {
   min_weight_gap_days: number; // default 2
   max_weekly_ramp_pct: number; // default 7 — CTL ramp above this triggers an easy-bias guard
   hard_cycling_days: number; // default 1 — max hard interval rides/week (beyond the sweet-spot day); the 80/20 cap. Remaining days fill easy.
+  hard_zone_focus: HardZone | null; // default null — pin hard-cycling days to this zone (e.g. a VO2max block) instead of the most-deficient zone
 }
+
+// The zones a hard-cycling day can target. Sweet spot has its own weekly
+// session, so it is deliberately not one of them.
+export type HardZone = "threshold" | "vo2" | "anaerobic";
 
 // Planned-load targets the scheduler attaches to each generated workout so the
 // calendar shows TSS/duration/IF and Intervals.icu folds them into planned CTL.
@@ -106,11 +111,23 @@ export interface FuelingConfig {
   hard_carb_g_per_hour: [number, number]; // default [30, 60]
   moderate_carb_g_per_hour: [number, number]; // default [60, 75]
   long_carb_g_per_hour: [number, number]; // default [60, 90]
+  caffeine_mg_per_kg: number; // default 0 (off) — pre-session caffeine cue on quality days, mg per kg bodyweight
+  meals: MealTemplates; // default all empty — suggested meals printed in the fuel note
+}
+
+// Suggested meals for the fuel note, one line each. Which list prints is
+// decided by the same classification that sets the day's calories, so the
+// meals and the number can't disagree. Empty lists print nothing.
+export interface MealTemplates {
+  deficit_day: string[]; // rest and easy days
+  fuel_day: string[]; // quality and long-ride days
+  fuelled_ride: string[]; // extra lines on any day with an on-bike carb target (bottle recipe, recovery)
 }
 
 export interface Config {
   weight_training: WorkoutDefinition;
   weight_training_taper?: WorkoutDefinition; // optional; falls back to weight_training
+  weight_training_cut?: WorkoutDefinition; // optional; used inside the fueling block window, falls back to weight_training
   sweet_spot: WorkoutDefinition;
   scheduling: SchedulingConfig;
   load_targets: LoadTargetsConfig;

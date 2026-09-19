@@ -8,6 +8,7 @@ import type {
 } from "./types.js";
 import { mostDeficientZone, zoneLabel, type Zone } from "./zones.js";
 import { holidayPlaceholderWorkout } from "./holidays.js";
+import { isWithinBlock } from "./fueling.js";
 import type { ReadinessSignal } from "./readiness.js";
 
 function addDays(dateStr: string, days: number): string {
@@ -169,7 +170,8 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     weeksToRace,
   } = input;
   const days = 7;
-  const { scheduling, weight_training, weight_training_taper, sweet_spot } = config;
+  const { scheduling, weight_training, weight_training_taper, weight_training_cut, sweet_spot } =
+    config;
   const guardOn = rampGuardTriggered(rampRatePct, config);
 
   // Track zones already assigned to hard rides this week so consecutive hard
@@ -181,6 +183,14 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // are for the short-interval zones (threshold / VO2 / anaerobic).
   const usedHardZones = new Set<Zone>(["sweet_spot"]);
   const pickHardZone = (): Zone | undefined => {
+    // A configured focus (e.g. a VO2max block) claims the first hard day
+    // outright, whatever the zone distribution says; any further hard days
+    // fall back to the deficit-driven pick so they never duplicate it.
+    const focus = scheduling.hard_zone_focus;
+    if (focus && !usedHardZones.has(focus)) {
+      usedHardZones.add(focus);
+      return focus;
+    }
     if (!zoneDistribution) return undefined;
     // Undefined once every hard zone is used (e.g. a 4th hard-cycling day after
     // threshold/vo2/anaerobic are taken): the day stays an unstructured "Hard
@@ -262,8 +272,16 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // defeats the recovery intent, so weights get their own spaced-out days.
   const stackWeightsOnHardDays = fatigue === "fresh" || fatigue === "moderate";
   const phase = classifyPhase(weeksToRace, config);
+  // Taper wins over the cut: race-approach volume is already the lower of the
+  // two. Inside the fueling block the cut routine keeps the heavy loads but
+  // trims sets, since recovery is the scarce resource in a deficit.
+  const inCut = config.fueling.enabled && isWithinBlock(startDate, config.fueling);
   const strengthRoutine =
-    phase === "taper" ? (weight_training_taper ?? weight_training) : weight_training;
+    phase === "taper"
+      ? (weight_training_taper ?? weight_training)
+      : inCut
+        ? (weight_training_cut ?? weight_training)
+        : weight_training;
   // Phase asks for a session count; fatigue can only reduce it, never inflate it.
   const fatigueSessions = veryFatigued
     ? scheduling.weight_sessions_very_fatigued
