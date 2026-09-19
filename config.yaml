@@ -244,7 +244,7 @@ readiness:
 # enabled: false to turn it off immediately.
 fueling:
   enabled: true
-  start_date: "2026-09-28" # the Monday after Escape New York (RACE_A 2026-09-26)
+  start_date: "2026-09-28" # originally the Monday after Escape New York (9/26, since dropped)
   end_date: "2026-12-06" # 10 weeks: 9 deficit weeks + one maintenance week
   daily_deficit_kcal: 650
   fuel_day_addback_kcal: 400
