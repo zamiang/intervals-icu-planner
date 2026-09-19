@@ -49,6 +49,13 @@ Workout definitions and scheduling rules live in `config.yaml`:
 - `weight_training_cut` — optional strength routine used instead of
   `weight_training` for weeks inside the `fueling` block window (same loads,
   fewer sets). A race taper takes precedence over it.
+- `fueling.caffeine_mg_per_kg` — pre-session caffeine dose (mg per kg of the
+  latest weigh-in) printed in the fuel note on quality days only (default `0`,
+  off).
+- `fueling.meals` — optional one-line meal templates printed in each day's
+  fuel note: `deficit_day` or `fuel_day` (picked by the same classification that
+  sets the day's calories), plus `fuelled_ride` lines on any day with an on-bike
+  carb target. Empty lists print nothing.
 - `periodization` — race-taper behavior. Within `taper_weeks` of your race
   (the earliest upcoming `RACE_A` event on your Intervals.icu calendar, or the
   `race_date` fallback), strength drops to one shorter taper session per week

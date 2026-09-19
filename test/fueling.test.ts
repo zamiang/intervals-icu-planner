@@ -373,6 +373,20 @@ describe("meal templates in the fuel note", () => {
     expect(text).not.toContain("Ride fuel:");
   });
 
+  it("prints deficit-day meals alongside ride fuel on a moderate easy ride", () => {
+    // 120 min easy: past low_carb_max_minutes so it gets an on-bike carb rate,
+    // short of long_min_minutes and below hard_min_if so it is not a fuel day.
+    const t = fuelTargetsFor(
+      { date: "2026-09-30", workouts: [workout({ durationMin: 120 })], ...ATHLETE },
+      CFG,
+    );
+    expect(t.isFuelDay).toBe(false);
+    expect(t.onBikeCarb).not.toBeNull();
+    const text = fuelNoteDescription(t, meals);
+    expect(text).toContain("- Breakfast: yogurt, no granola");
+    expect(text).toContain("Ride fuel:\n- Bottle: 80g carb + salt");
+  });
+
   it("prints no meal section when the templates are empty or absent", () => {
     const t = fuelTargetsFor(
       { date: "2026-09-30", workouts: [workout({ durationMin: 75 })], ...ATHLETE },
