@@ -226,6 +226,56 @@ periodization:
     expect(config.periodization.race_date).toBe("2026-09-26");
   });
 
+  it("loads an optional cut routine, a hard-zone focus and a caffeine dose", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    const yaml =
+      VALID_YAML.replace("scheduling:", "scheduling:\n  hard_zone_focus: vo2") +
+      `
+weight_training_cut:
+  name: "Cut Lift"
+  duration_minutes: 50
+  description: "Same loads, fewer sets"
+fueling:
+  caffeine_mg_per_kg: 3
+  meals:
+    deficit_day: ["Yogurt bowl, no granola"]
+`;
+    await fs.writeFile(file, yaml);
+    const config = await loadConfig(file);
+    expect(config.weight_training_cut?.name).toBe("Cut Lift");
+    expect(config.scheduling.hard_zone_focus).toBe("vo2");
+    expect(config.fueling.caffeine_mg_per_kg).toBe(3);
+    expect(config.fueling.meals).toEqual({
+      deficit_day: ["Yogurt bowl, no granola"],
+      fuel_day: [],
+      fuelled_ride: [],
+    });
+  });
+
+  it("rejects meal templates that are not lists of strings", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(file, VALID_YAML + "\nfueling:\n  meals:\n    fuel_day: 3\n");
+    await expect(loadConfig(file)).rejects.toThrow("fueling.meals.fuel_day");
+  });
+
+  it("defaults hard_zone_focus to null and caffeine off", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(file, VALID_YAML);
+    const config = await loadConfig(file);
+    expect(config.scheduling.hard_zone_focus).toBeNull();
+    expect(config.fueling.caffeine_mg_per_kg).toBe(0);
+    expect(config.weight_training_cut).toBeUndefined();
+  });
+
+  it("rejects a hard_zone_focus that is not a hard-day zone", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(
+      file,
+      VALID_YAML.replace("scheduling:", "scheduling:\n  hard_zone_focus: sweet_spot"),
+    );
+    await expect(loadConfig(file)).rejects.toThrow("hard_zone_focus");
+  });
+
   it("throws when a scheduling field has the wrong type", async () => {
     const yaml = `
 weight_training:
@@ -318,6 +368,7 @@ describe("repo config.yaml", () => {
     const proseDescriptions = [
       ["weight_training", config.weight_training.description],
       ["weight_training_taper", config.weight_training_taper?.description ?? ""],
+      ["weight_training_cut", config.weight_training_cut?.description ?? ""],
     ] as const;
     for (const [name, description] of proseDescriptions) {
       expect(description, `${name}.description contains a duration-like token`).not.toMatch(

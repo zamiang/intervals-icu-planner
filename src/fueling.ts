@@ -1,4 +1,10 @@
-import type { FuelingConfig, IntervalsEvent, PlannedWorkout, WorkoutType } from "./types.js";
+import type {
+  FuelingConfig,
+  IntervalsEvent,
+  MealTemplates,
+  PlannedWorkout,
+  WorkoutType,
+} from "./types.js";
 
 // Daily fuelling targets: "what should I eat today", derived from the day the
 // scheduler actually planned rather than a fixed weekday table. A 3-hour
@@ -65,6 +71,7 @@ export interface FuelTargets {
   onBikeCarb: CarbRate | null; // null when nothing is ridden, or the ride is a deliberate low-carb day
   rideMinutes: number;
   isFuelDay: boolean; // true when the day is fuelled at/near maintenance
+  caffeineMg: number | null; // pre-session caffeine on quality days; null on other days or when disabled
 }
 
 // Mifflin-St Jeor resting metabolic rate. Chosen over Harris-Benedict because
@@ -150,6 +157,21 @@ function isFuelDay(rideMinutes: number, hardestIf: number | null, cfg: FuelingCo
   return hardestIf !== null && hardestIf >= cfg.hard_min_if;
 }
 
+// Pre-session caffeine, only before quality work: ~3 mg/kg 30-60 min out is
+// the best-evidenced legal ergogenic there is, but it is spent on the sessions
+// whose quality it protects, not on easy spins where it only costs sleep —
+// and sleep is what decides whether a deficit comes off fat or muscle.
+// Rounded to 5 mg so the note reads as a dose, not a calculation.
+export function caffeineDose(
+  weightKg: number,
+  hardestIf: number | null,
+  cfg: FuelingConfig,
+): number | null {
+  if (cfg.caffeine_mg_per_kg <= 0) return null;
+  if (hardestIf === null || hardestIf < cfg.hard_min_if) return null;
+  return Math.round((cfg.caffeine_mg_per_kg * weightKg) / 5) * 5;
+}
+
 export function fuelTargetsFor(input: FuelDayInput, cfg: FuelingConfig): FuelTargets {
   const { date, workouts, weightKg, heightCm, ageYears, sex, ftp } = input;
 
@@ -197,6 +219,7 @@ export function fuelTargetsFor(input: FuelDayInput, cfg: FuelingConfig): FuelTar
     onBikeCarb: carbRate(rideMinutes, hardestIf, cfg),
     rideMinutes,
     isFuelDay: fuelDay,
+    caffeineMg: caffeineDose(weightKg, hardestIf, cfg),
   };
 }
 
@@ -212,7 +235,7 @@ export function fuelNoteName(t: FuelTargets): string {
   return `Fuel ${num(t.kcal)} kcal · ${t.proteinG}g protein`;
 }
 
-export function fuelNoteDescription(t: FuelTargets): string {
+export function fuelNoteDescription(t: FuelTargets, meals?: MealTemplates): string {
   const lines: string[] = [];
   lines.push(`${num(t.kcal)} kcal · ${t.proteinG}g protein · ${t.carbG}g carb · ${t.fatG}g fat.`);
   lines.push("");
@@ -234,14 +257,34 @@ export function fuelNoteDescription(t: FuelTargets): string {
     );
   }
 
+  if (t.caffeineMg !== null) {
+    lines.push(
+      `Caffeine: ~${t.caffeineMg} mg 30-60 min before the session. None after ~2 pm — ` +
+        `sleep is what keeps a deficit coming off fat rather than muscle.`,
+    );
+  }
+
   lines.push("");
   lines.push(
     t.isFuelDay
       ? "Fuel day — at or near maintenance. The session is the point; feed it."
       : "Deficit day — this is where the week's deficit is taken.",
   );
+  const mealLines = meals ? (t.isFuelDay ? meals.fuel_day : meals.deficit_day) : [];
+  if (mealLines.length > 0) {
+    lines.push("");
+    lines.push("Meals:");
+    for (const m of mealLines) lines.push(`- ${m}`);
+  }
+  if (meals && t.onBikeCarb && meals.fuelled_ride.length > 0) {
+    lines.push("");
+    lines.push("Ride fuel:");
+    for (const m of meals.fuelled_ride) lines.push(`- ${m}`);
+  }
+  lines.push("");
   lines.push(
-    `Protein in 4 feedings of ~${Math.round(t.proteinG / 4)}g, plus ~40g casein before sleep.`,
+    `Protein in 4 feedings of ~${Math.round(t.proteinG / 4)}g — make the last one casein ` +
+      `(Greek yogurt, skyr, cottage cheese) before sleep.`,
   );
   lines.push("");
   lines.push(
@@ -320,7 +363,7 @@ export function fuelNoteEvents(
         name: fuelNoteName(targets),
         category: "NOTE",
         type: "Note",
-        description: fuelNoteDescription(targets),
+        description: fuelNoteDescription(targets, cfg.meals),
       };
     });
 }

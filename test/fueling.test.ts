@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ageOn,
   carbRate,
+  caffeineDose,
   fuelNoteDescription,
   fuelNoteEvents,
   fuelNoteName,
@@ -33,6 +34,8 @@ const CFG: FuelingConfig = {
   hard_carb_g_per_hour: [30, 60],
   moderate_carb_g_per_hour: [60, 75],
   long_carb_g_per_hour: [60, 90],
+  caffeine_mg_per_kg: 0,
+  meals: { deficit_day: [], fuel_day: [], fuelled_ride: [] },
 };
 
 // The athlete this was built for, so the numbers below are the real ones.
@@ -301,11 +304,95 @@ describe("fuel note rendering", () => {
     expect(fuelNoteDescription(targets)).toContain("not on top of it");
   });
 
+  it("puts the pre-sleep casein inside the 4 feedings, not on top", () => {
+    expect(fuelNoteDescription(targets)).toContain("make the last one casein");
+  });
+
   it("tells a short easy day to ride low-carb instead", () => {
     const easy = fuelTargetsFor(
       { date: "2026-09-30", workouts: [workout({ durationMin: 75 })], ...ATHLETE },
       CFG,
     );
     expect(fuelNoteDescription(easy)).toContain("no carbs needed");
+  });
+});
+
+describe("caffeine cue", () => {
+  const caf: FuelingConfig = { ...CFG, caffeine_mg_per_kg: 3 };
+  const hard = workout({ durationMin: 75, intensityFactor: 0.88 });
+
+  it("doses ~3 mg/kg, rounded to 5 mg, on quality days", () => {
+    // 3 mg/kg x 75 kg = 225 mg
+    expect(caffeineDose(75, 0.88, caf)).toBe(225);
+    expect(caffeineDose(78.4, 0.88, caf)).toBe(235);
+    const t = fuelTargetsFor({ date: "2026-10-01", workouts: [hard], ...ATHLETE }, caf);
+    expect(t.caffeineMg).toBe(225);
+    expect(fuelNoteDescription(t)).toContain("Caffeine: ~225 mg");
+  });
+
+  it("stays silent on easy or long-but-easy days", () => {
+    expect(caffeineDose(75, 0.62, caf)).toBeNull();
+    expect(caffeineDose(75, null, caf)).toBeNull();
+    const long = fuelTargetsFor(
+      { date: "2026-10-03", workouts: [workout({ durationMin: 180 })], ...ATHLETE },
+      caf,
+    );
+    expect(fuelNoteDescription(long)).not.toContain("Caffeine");
+  });
+
+  it("is off when caffeine_mg_per_kg is 0", () => {
+    expect(caffeineDose(75, 0.88, CFG)).toBeNull();
+  });
+});
+
+describe("meal templates in the fuel note", () => {
+  const meals = {
+    deficit_day: ["Breakfast: yogurt, no granola"],
+    fuel_day: ["Breakfast: yogurt + granola"],
+    fuelled_ride: ["Bottle: 80g carb + salt"],
+  };
+
+  it("prints the fuel-day meals and ride fuel on a long ride day", () => {
+    const t = fuelTargetsFor(
+      { date: "2026-10-03", workouts: [workout({ durationMin: 180 })], ...ATHLETE },
+      CFG,
+    );
+    const text = fuelNoteDescription(t, meals);
+    expect(text).toContain("Meals:\n- Breakfast: yogurt + granola");
+    expect(text).toContain("Ride fuel:\n- Bottle: 80g carb + salt");
+    expect(text).not.toContain("no granola");
+  });
+
+  it("prints the deficit-day meals and no ride fuel on a short easy day", () => {
+    const t = fuelTargetsFor(
+      { date: "2026-09-30", workouts: [workout({ durationMin: 75 })], ...ATHLETE },
+      CFG,
+    );
+    const text = fuelNoteDescription(t, meals);
+    expect(text).toContain("- Breakfast: yogurt, no granola");
+    expect(text).not.toContain("Ride fuel:");
+  });
+
+  it("prints deficit-day meals alongside ride fuel on a moderate easy ride", () => {
+    // 120 min easy: past low_carb_max_minutes so it gets an on-bike carb rate,
+    // short of long_min_minutes and below hard_min_if so it is not a fuel day.
+    const t = fuelTargetsFor(
+      { date: "2026-09-30", workouts: [workout({ durationMin: 120 })], ...ATHLETE },
+      CFG,
+    );
+    expect(t.isFuelDay).toBe(false);
+    expect(t.onBikeCarb).not.toBeNull();
+    const text = fuelNoteDescription(t, meals);
+    expect(text).toContain("- Breakfast: yogurt, no granola");
+    expect(text).toContain("Ride fuel:\n- Bottle: 80g carb + salt");
+  });
+
+  it("prints no meal section when the templates are empty or absent", () => {
+    const t = fuelTargetsFor(
+      { date: "2026-09-30", workouts: [workout({ durationMin: 75 })], ...ATHLETE },
+      CFG,
+    );
+    expect(fuelNoteDescription(t)).not.toContain("Meals:");
+    expect(fuelNoteDescription(t, CFG.meals)).not.toContain("Meals:");
   });
 });

@@ -43,6 +43,7 @@ const BASE_CONFIG: Config = {
     min_weight_gap_days: 2,
     max_weekly_ramp_pct: 7,
     hard_cycling_days: 1,
+    hard_zone_focus: null,
   },
   fueling: {
     enabled: false,
@@ -63,6 +64,8 @@ const BASE_CONFIG: Config = {
     hard_carb_g_per_hour: [30, 60],
     moderate_carb_g_per_hour: [60, 75],
     long_carb_g_per_hour: [60, 90],
+    caffeine_mg_per_kg: 0,
+    meals: { deficit_day: [], fuel_day: [], fuelled_ride: [] },
   },
   load_targets: {
     easy_if: 0.62,
@@ -730,6 +733,48 @@ describe("schedule", () => {
       for (const ride of unzoned) expect(ride.name).toBe("Hard Ride");
     });
 
+    it("pins the first hard day to hard_zone_focus, overriding the deficit pick", () => {
+      // Threshold is the most deficient zone here; the focus must still win.
+      const dist = { ...emptyDistribution(), vo2: 0.5, anaerobic: 0.5 };
+      const cfg: Config = {
+        ...BASE_CONFIG,
+        scheduling: { ...BASE_CONFIG.scheduling, hard_zone_focus: "vo2" },
+      };
+      const result = schedule(
+        makeInput({ trainingLoad: freshLoad, zoneDistribution: dist, config: cfg }),
+      );
+      const hardRides = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
+      expect(hardRides).toHaveLength(1);
+      expect(hardRides[0].targetZone).toBe("vo2");
+      expect(hardRides[0].name).toBe("VO2 Max Intervals");
+    });
+
+    it("applies hard_zone_focus even without a zone distribution", () => {
+      const cfg: Config = {
+        ...BASE_CONFIG,
+        scheduling: { ...BASE_CONFIG.scheduling, hard_zone_focus: "vo2" },
+      };
+      const result = schedule(makeInput({ trainingLoad: freshLoad, config: cfg }));
+      const hardRides = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
+      expect(hardRides.map((w) => w.targetZone)).toEqual(["vo2"]);
+    });
+
+    it("fills further hard days from the deficit pick without repeating the focus", () => {
+      const dist = { ...emptyDistribution(), endurance: 1.0 };
+      const cfg: Config = {
+        ...BASE_CONFIG,
+        scheduling: { ...BASE_CONFIG.scheduling, hard_cycling_days: 2, hard_zone_focus: "vo2" },
+      };
+      const result = schedule(
+        makeInput({ trainingLoad: freshLoad, zoneDistribution: dist, config: cfg }),
+      );
+      const zones = result
+        .filter((w) => w.type === "cycling" && w.intensity === "hard")
+        .map((w) => w.targetZone);
+      expect(zones[0]).toBe("vo2");
+      expect(new Set(zones).size).toBe(zones.length);
+    });
+
     it("omits targetZone when no distribution is supplied (back-compat)", () => {
       const result = schedule(makeInput({ trainingLoad: freshLoad }));
       const hardRides = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
@@ -830,6 +875,47 @@ describe("schedule", () => {
     it("places no strength in the final taper week", () => {
       const plan = schedule(makeInput({ config: taperConfig, weeksToRace: 0 }));
       expect(plan.filter((w) => w.type === "weights").length).toBe(0);
+    });
+
+    const cutConfig: Config = {
+      ...taperConfig,
+      weight_training_cut: { name: "Cut Lift", duration_minutes: 50, description: "Fewer sets" },
+      fueling: {
+        ...BASE_CONFIG.fueling,
+        enabled: true,
+        start_date: "2026-04-20",
+        end_date: "2026-06-28",
+      },
+    };
+
+    it("uses the cut routine for weeks inside the fueling block", () => {
+      const plan = schedule(makeInput({ config: cutConfig, weeksToRace: 12 }));
+      const weights = plan.filter((w) => w.type === "weights");
+      expect(weights.length).toBe(2);
+      expect(weights.every((w) => w.name === "Cut Lift" && w.durationMin === 50)).toBe(true);
+    });
+
+    it("uses the block routine outside the fueling window or with fueling off", () => {
+      const before = schedule(
+        makeInput({ config: cutConfig, startDate: "2026-04-13", weeksToRace: 12 }),
+      );
+      expect(before.filter((w) => w.type === "weights").every((w) => w.name === "Strength")).toBe(
+        true,
+      );
+      const off = schedule(
+        makeInput({
+          config: { ...cutConfig, fueling: { ...cutConfig.fueling, enabled: false } },
+          weeksToRace: 12,
+        }),
+      );
+      expect(off.filter((w) => w.type === "weights").every((w) => w.name === "Strength")).toBe(
+        true,
+      );
+    });
+
+    it("prefers the taper routine over the cut routine inside the taper window", () => {
+      const plan = schedule(makeInput({ config: cutConfig, weeksToRace: 3 }));
+      expect(plan.filter((w) => w.type === "weights").map((w) => w.name)).toEqual(["Taper Lift"]);
     });
 
     it("falls back to the block routine when no taper variant is defined", () => {

@@ -8,6 +8,15 @@ weight_training:
     upstroke, hips/shoulders mobile. Then 2 light ramp-up sets on your first
     heavy lift before working weight.
 
+    Power Primer (4 min) — before the heavy work, while you're fresh.
+    Box Jump or Squat Jump — 3x3, full rest between sets. Maximal intent on
+    every rep, step down from the box rather than jumping down. Stop the set
+    the moment height drops. Rate of force development is the quality that
+    fades first with age and the one concurrent riding blunts most; heavy
+    squats alone don't fully cover it.
+
+    Order: lift BEFORE riding on a shared day, or keep 6+ hours between them.
+
     Block 1: Heavy Strength (30 min) — the part that actually moves your power.
     Lift heavy, low reps, and rest 2-3 min between sets. These are loadable on
     purpose so you can progress over time.
@@ -60,6 +69,49 @@ weight_training:
     Progression rule: when you complete every set at the TOP of the rep range
     with good form, add load (or reps on bodyweight moves) next session. If a lift
     sits at the same weight x reps for 3+ sessions, it has stalled — bump it.
+
+# Used instead of weight_training for any week inside the fueling block window
+# (fueling.start_date → end_date), so it switches on and off with the cut by
+# itself. The loads stay exactly where they are — heavy load is the signal that
+# tells the body to keep muscle while energy is short — and roughly a third of
+# the sets go, because recovery is what a deficit takes away. Accessories are
+# trimmed hardest; the squat and hinge are protected.
+weight_training_cut:
+  name: "Cyclist Strength Routine (Cut)"
+  duration_minutes: 45
+  description: |
+    Fat-loss block version — SAME loads as your normal routine, fewer sets.
+    If a lift stalls here it means under-fuelled, not under-trained: flag it
+    rather than grinding more sets.
+
+    Warm-Up (6 min)
+    Deadbugs (1x15), hip circles, band pull-aparts, bodyweight squats, then 2
+    light ramp-up sets on your first heavy lift.
+
+    Power Primer (3 min)
+    Box Jump or Squat Jump — 2x3, full rest, maximal intent. Step down.
+
+    Order: lift BEFORE riding on a shared day, or keep 6+ hours between them.
+
+    Block 1: Heavy Strength (22 min) — rest 2-3 min between sets.
+    1. Zercher Squat (or Belt/Safety-Bar Squat) — 3x5-6 @ heavy
+       Same working weight as the full routine. One set fewer, not lighter.
+    2. Trap-Bar Deadlift (or Romanian Deadlift) — 2x5-6 @ heavy
+       Log the TOTAL weight. Still the heaviest lift of the day.
+    3. Bulgarian Split Squat (Dumbbells) — 2x6-8 each leg @ heavy
+
+    Block 2: Upper Body + Core (10 min) — brisk.
+    4. Bent Over Row (Band or DB) — 2x10-12
+    5. Push Up (Band or regular) — 2x12-15
+    6. Ab Wheel — 2x8-10
+    7. Side Plank — 2x30-45 sec each side
+
+    Cooldown (4 min)
+    Hip flexor stretch, pigeon pose.
+
+    Progression rule: same as the full routine — top of the rep range with good
+    form means add load next session. Aim to HOLD loads through the block;
+    small gains are a bonus, not the target.
 
 weight_training_taper:
   name: "Strength Taper"
@@ -144,6 +196,15 @@ scheduling:
   # are easy, never "moderate" — moderate-everywhere riding is the grey-zone
   # trap to avoid.
   hard_cycling_days: 1
+  # Pin that one hard day to a zone instead of letting the zone-deficit pick
+  # choose (null restores the deficit pick). Set to vo2 for the autumn 2026
+  # no-race block: with sweet spot already weekly, the second quality day is
+  # the one place VO2max work fits, and VO2max is what falls fastest when
+  # masters riders lose volume (loss per decade roughly triples once volume
+  # drops >20%). The session is 5x3 min @ 110-118% FTP (src/workout.ts).
+  # Revisit after 6-8 weeks, around 2026-11-23 — switch back to null or
+  # threshold once the block is done.
+  hard_zone_focus: vo2
 
 # Planned-load targets the planner attaches to each generated workout, so the
 # calendar shows TSS/duration/IF and Intervals.icu folds them into planned CTL.
@@ -244,7 +305,7 @@ readiness:
 # enabled: false to turn it off immediately.
 fueling:
   enabled: true
-  start_date: "2026-09-28" # the Monday after Escape New York (RACE_A 2026-09-26)
+  start_date: "2026-09-28" # race dropped 2026-09-18; held so a creatine load (started ~9/19) lands its water weight before the baseline weigh-in
   end_date: "2026-12-06" # 10 weeks: 9 deficit weeks + one maintenance week
   daily_deficit_kcal: 650
   fuel_day_addback_kcal: 400
@@ -265,3 +326,31 @@ fueling:
   hard_carb_g_per_hour: [30, 60]
   moderate_carb_g_per_hour: [60, 75]
   long_carb_g_per_hour: [60, 90]
+  # Pre-session caffeine cue on quality days only (IF >= hard_min_if), in mg
+  # per kg of the live weigh-in — ~235 mg at 78 kg. 3 mg/kg 30-60 min before
+  # is the dose the evidence supports; easy and long-but-easy days get none, so
+  # the cost to sleep is paid only where it buys session quality. 0 disables.
+  caffeine_mg_per_kg: 3
+  # Suggested meals printed in each day's fuel note — the list is picked by the
+  # same fuel-day / deficit-day call that sets the calories, so the menu always
+  # matches the number. Protein is the same (~40 g x 4) on both; carbs are what
+  # move. Each line is a template, not a prescription: swap in anything with
+  # the same protein and roughly the same calories. Empty lists print nothing.
+  meals:
+    deficit_day:
+      - "Breakfast (~420 kcal, 50 g P): 250 g 2% Greek yogurt + 1 scoop whey + 150 g berries + 1 tbsp chia. No granola."
+      - "Lunch (~670 kcal, 55 g P): 150 g pork tenderloin + 150 g black beans + 100 g cooked rice, slaw, salsa, 1/2 avocado."
+      - "Dinner (~620 kcal, 46 g P): 170 g salmon + 75 g edamame + 100 g cooked rice, cucumber; soy, rice vinegar, 1 measured tsp sesame oil."
+      - "Evening (~220 kcal, 27 g P): 250 g skyr + cocoa + cinnamon + 10 g dark chocolate. This is the casein feeding."
+      - "Swap for lunch or dinner: chicken Caesar with a Greek-yogurt dressing (~480 kcal, 60 g P), croutons skipped."
+      - "Measure every oil and dressing with a spoon, and log it."
+    fuel_day:
+      - "Breakfast (~640 kcal, 50 g P): Greek yogurt + whey + berries + chia, plus 40 g granola and honey."
+      - "Lunch (~870 kcal, 55 g P): pork + black beans bowl with 250 g cooked rice."
+      - "Dinner (~810 kcal, 46 g P): salmon + edamame bowl with 250 g cooked rice, plus bread."
+      - "Evening (~220 kcal, 27 g P): 250 g skyr + cocoa + 10 g dark chocolate."
+      - "Carbs before the session; do not save calories on a quality day."
+    fuelled_ride:
+      - "Bottle (~320 kcal, 80 g carb): 50 g maltodextrin + 30 g fructose (or 80 g sugar) + 1/4 tsp salt in 750 ml."
+      - "Long ride: one bottle per hour, or bottles plus a gel or rice cake. Four hours means four bottles."
+      - "Recovery within the hour (~500 kcal, 40 g P): bagel + 2 eggs + 2 egg whites + 60 g smoked salmon."

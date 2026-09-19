@@ -42,6 +42,20 @@ Workout definitions and scheduling rules live in `config.yaml`:
   the sweet-spot day (default `1`). This is the 80/20 cap: every non-quality day
   fills as easy Zone 2, never "moderate". Raise to `2` only for a dedicated
   build block.
+- `scheduling.hard_zone_focus` — pin that hard day to one zone (`threshold`,
+  `vo2` or `anaerobic`) for a focused block, instead of the zone the recent
+  ride mix is most short of (default `null`). Any extra hard days still use the
+  deficit pick and never repeat the focus.
+- `weight_training_cut` — optional strength routine used instead of
+  `weight_training` for weeks inside the `fueling` block window (same loads,
+  fewer sets). A race taper takes precedence over it.
+- `fueling.caffeine_mg_per_kg` — pre-session caffeine dose (mg per kg of the
+  latest weigh-in) printed in the fuel note on quality days only (default `0`,
+  off).
+- `fueling.meals` — optional one-line meal templates printed in each day's
+  fuel note: `deficit_day` or `fuel_day` (picked by the same classification that
+  sets the day's calories), plus `fuelled_ride` lines on any day with an on-bike
+  carb target. Empty lists print nothing.
 - `periodization` — race-taper behavior. Within `taper_weeks` of your race
   (the earliest upcoming `RACE_A` event on your Intervals.icu calendar, or the
   `race_date` fallback), strength drops to one shorter taper session per week
