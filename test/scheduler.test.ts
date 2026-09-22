@@ -10,6 +10,7 @@ import {
 } from "../src/scheduler.js";
 import { emptyDistribution, zoneLabel } from "../src/zones.js";
 import { computeReadiness } from "../src/readiness.js";
+import { projectCtl, windowTss } from "../src/blocks.js";
 import type {
   SchedulerInput,
   IntervalsEvent,
@@ -70,6 +71,7 @@ const BASE_CONFIG: Config = {
   load_targets: {
     easy_if: 0.62,
     easy_minutes: 75,
+    easy_max_minutes: 120,
     long_minutes: 180,
     hard_if: 0.88,
     hard_minutes: 75,
@@ -1328,5 +1330,146 @@ describe("holiday awareness", () => {
     // Later days of the span are NOT covered without holidayDates — that is
     // exactly why callers must pass it (the holidays.enabled=false posture).
     expect(result.some((w) => w.date === week(3))).toBe(true);
+  });
+});
+
+describe("season blocks", () => {
+  // makeInput plans the week starting 2026-04-20.
+  const withBlocks = (blocks: Config["blocks"], base: Config = BASE_CONFIG): Config => ({
+    ...base,
+    blocks,
+  });
+  const block = (extra: Partial<NonNullable<Config["blocks"]>[number]> = {}) => ({
+    name: "Test block",
+    start_date: "2026-04-01",
+    end_date: "2026-05-31",
+    ...extra,
+  });
+  const freshLoad = { ctl: 50, atl: 40, tsb: 10 };
+  const easyRides = (plan: PlannedWorkout[]): PlannedWorkout[] =>
+    plan.filter((w) => w.type === "cycling" && w.intensity === "easy");
+  const longRide = (plan: PlannedWorkout[]): PlannedWorkout | undefined =>
+    plan.find((w) => w.name === "Long Endurance Ride");
+
+  describe("hard_zone_focus", () => {
+    it("uses the active block's focus over the top-level one", () => {
+      const cfg = withBlocks([block({ hard_zone_focus: "vo2" })], {
+        ...BASE_CONFIG,
+        scheduling: { ...BASE_CONFIG.scheduling, hard_zone_focus: "threshold" },
+      });
+      const result = schedule(makeInput({ trainingLoad: freshLoad, config: cfg }));
+      const hard = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
+      expect(hard.map((w) => w.targetZone)).toEqual(["vo2"]);
+    });
+
+    it("lets a block clear the focus with an explicit null", () => {
+      const dist = { ...emptyDistribution(), vo2: 0.5, anaerobic: 0.5 }; // threshold most deficient
+      const cfg = withBlocks([block({ hard_zone_focus: null })], {
+        ...BASE_CONFIG,
+        scheduling: { ...BASE_CONFIG.scheduling, hard_zone_focus: "vo2" },
+      });
+      const result = schedule(
+        makeInput({ trainingLoad: freshLoad, zoneDistribution: dist, config: cfg }),
+      );
+      const hard = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
+      expect(hard.map((w) => w.targetZone)).toEqual(["threshold"]);
+    });
+
+    it("stops applying once the block has ended", () => {
+      const dist = { ...emptyDistribution(), vo2: 0.5, anaerobic: 0.5 };
+      const cfg = withBlocks([block({ end_date: "2026-04-19", hard_zone_focus: "vo2" })]);
+      const result = schedule(
+        makeInput({ trainingLoad: freshLoad, zoneDistribution: dist, config: cfg }),
+      );
+      const hard = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
+      expect(hard.map((w) => w.targetZone)).toEqual(["threshold"]);
+    });
+  });
+
+  describe("ctl_floor", () => {
+    it("leaves the week untouched when it already holds CTL above the floor", () => {
+      const plain = schedule(makeInput({ trainingLoad: freshLoad }));
+      const floored = schedule(
+        makeInput({ trainingLoad: freshLoad, config: withBlocks([block({ ctl_floor: 40 })]) }),
+      );
+      expect(floored).toEqual(plain);
+    });
+
+    it("lengthens easy rides until the week projects onto the floor", () => {
+      const input = makeInput({
+        trainingLoad: freshLoad,
+        config: withBlocks([block({ ctl_floor: 53 })]),
+      });
+      const plan = schedule(input);
+      const before = schedule(makeInput({ trainingLoad: freshLoad }));
+      expect(projectCtl(50, windowTss(before, [], input.startDate))).toBeLessThan(53);
+      expect(projectCtl(50, windowTss(plan, [], input.startDate))).toBeGreaterThanOrEqual(53);
+      const easy = easyRides(plan).filter((w) => w !== longRide(plan));
+      expect(easy.length).toBeGreaterThan(0);
+      for (const w of easy) {
+        expect(w.durationMin).toBeGreaterThan(75);
+        expect(w.durationMin! % 5).toBe(0);
+        expect(w.load).toBe(Math.round((w.durationMin! / 60) * 0.62 * 0.62 * 100));
+      }
+    });
+
+    it("never touches the long ride or adds intensity", () => {
+      const plain = schedule(makeInput({ trainingLoad: freshLoad }));
+      const plan = schedule(
+        makeInput({ trainingLoad: freshLoad, config: withBlocks([block({ ctl_floor: 60 })]) }),
+      );
+      expect(longRide(plan)?.durationMin).toBe(180);
+      expect(plan.map((w) => [w.type, w.intensity])).toEqual(
+        plain.map((w) => [w.type, w.intensity]),
+      );
+    });
+
+    it("caps each easy ride at easy_max_minutes", () => {
+      const plan = schedule(
+        makeInput({ trainingLoad: freshLoad, config: withBlocks([block({ ctl_floor: 80 })]) }),
+      );
+      const easy = easyRides(plan).filter((w) => w !== longRide(plan));
+      for (const w of easy) expect(w.durationMin).toBe(120);
+    });
+
+    it("counts load already on the calendar toward the floor", () => {
+      const cfg = withBlocks([block({ ctl_floor: 53 })]);
+      const existing: IntervalsEvent[] = [
+        {
+          start_date_local: "2026-04-26T00:00:00",
+          name: "Group Ride",
+          category: "WORKOUT",
+          icu_training_load: 300,
+          icu_intensity: 0.7,
+        },
+      ];
+      const plan = schedule(
+        makeInput({ trainingLoad: freshLoad, existingEvents: existing, config: cfg }),
+      );
+      for (const w of easyRides(plan)) {
+        if (w !== longRide(plan)) expect(w.durationMin).toBe(75);
+      }
+    });
+
+    it("does not top up a fatigued week", () => {
+      const load = { ctl: 50, atl: 65, tsb: -15 };
+      const plain = schedule(makeInput({ trainingLoad: load }));
+      const floored = schedule(
+        makeInput({ trainingLoad: load, config: withBlocks([block({ ctl_floor: 60 })]) }),
+      );
+      expect(floored).toEqual(plain);
+    });
+
+    it("does not top up while the ramp guard is firing", () => {
+      const plain = schedule(makeInput({ trainingLoad: freshLoad, rampRatePct: 10 }));
+      const floored = schedule(
+        makeInput({
+          trainingLoad: freshLoad,
+          rampRatePct: 10,
+          config: withBlocks([block({ ctl_floor: 60 })]),
+        }),
+      );
+      expect(floored).toEqual(plain);
+    });
   });
 });

@@ -12,6 +12,7 @@ import { ageOn, fuelNoteEvents, latestWeightKg } from "./fueling.js";
 import type { Sex } from "./fueling.js";
 import { ATHLETE_FILE, isCompleteProfile, loadLocalAthlete, mergeAthlete } from "./athlete.js";
 import { holidayDatesInWindow } from "./holidays.js";
+import { activeBlock, blockWeek, hardZoneFocusOn, projectCtl, windowTss } from "./blocks.js";
 import type { AthleteProfile } from "./intervals.js";
 import type {
   Config,
@@ -102,6 +103,31 @@ export function parseArgs(args: string[]): ParsedArgs {
   const dryRun = args.includes("--dry-run");
   const json = args.includes("--json");
   return { command, dryRun, json };
+}
+
+// One-line season summary: the active block, its week, its zone focus, and —
+// when it defends a CTL floor — where CTL stands against it. `weekTss` is the
+// planned week (plan command) so the line can show the projected end-of-week
+// CTL; status passes none and shows the current value only.
+export function formatBlock(today: string, config: Config, ctl: number, weekTss?: number): string {
+  const block = activeBlock(today, config.blocks);
+  if (!block) {
+    const next = (config.blocks ?? []).find((b) => b.start_date > today);
+    return next ? `none — next: ${next.name} from ${next.start_date}` : "none";
+  }
+  const { week, of } = blockWeek(today, block);
+  const parts = [`${block.name} (week ${week} of ${of}, ends ${block.end_date})`];
+  const focus = hardZoneFocusOn(today, config);
+  if (focus) parts.push(`${zoneLabel(focus)} focus`);
+  if (block.ctl_floor !== undefined) {
+    const now = `CTL ${ctl.toFixed(1)} vs floor ${block.ctl_floor}`;
+    parts.push(
+      weekTss === undefined
+        ? now
+        : `${now}, ${projectCtl(ctl, weekTss).toFixed(1)} projected after this week`,
+    );
+  }
+  return parts.join(" — ");
 }
 
 function requireEnv(name: string): string {
@@ -384,6 +410,7 @@ async function main() {
         icu_ftp: ftp,
         icu_eftp: eftp ?? null,
         readiness,
+        block: activeBlock(today, config.blocks) ?? null,
         zones: { distribution, targets: POLARIZED_TARGETS, deficits },
         ramp: {
           weekly_pct: rampRatePct ?? null,
@@ -400,6 +427,7 @@ async function main() {
     console.log(`ATL (Fatigue):  ${load.atl}`);
     console.log(`TSB (Form):     ${load.tsb}`);
     console.log(`Readiness:      ${formatReadiness(readiness)}`);
+    console.log(`Block:          ${formatBlock(today, config, load.ctl)}`);
     console.log();
     console.log(`FTP:    ${ftp !== null ? `${ftp}W` : "not set"}  (Intervals.icu)`);
     console.log(
@@ -518,6 +546,7 @@ async function main() {
 
   console.log("=== Weekly Plan ===");
   console.log(`TSB ${load.tsb.toFixed(1)} (${fatigueLabel[fatigue] ?? fatigue})`);
+  console.log(`Block: ${formatBlock(today, config, load.ctl, windowTss(planned, events, today))}`);
   if (readiness.status === "suppressed") {
     console.log(`READINESS: ${readiness.reason} — week downgraded one fatigue tier`);
   }

@@ -197,14 +197,41 @@ scheduling:
   # trap to avoid.
   hard_cycling_days: 1
   # Pin that one hard day to a zone instead of letting the zone-deficit pick
-  # choose (null restores the deficit pick). Set to vo2 for the autumn 2026
-  # no-race block: with sweet spot already weekly, the second quality day is
-  # the one place VO2max work fits, and VO2max is what falls fastest when
-  # masters riders lose volume (loss per decade roughly triples once volume
-  # drops >20%). The session is 5x3 min @ 110-118% FTP (src/workout.ts).
-  # Revisit after 6-8 weeks, around 2026-11-23 — switch back to null or
-  # threshold once the block is done.
-  hard_zone_focus: vo2
+  # choose (null = deficit pick). This is the year-round default; a focus that
+  # belongs to one stretch of the season goes on a block below instead, so it
+  # ends on its date rather than on someone remembering to edit it.
+  hard_zone_focus: null
+
+# Season blocks: what each stretch of the season is for. The weekly planner
+# still decides how hard *this* week is from TSB/readiness; a block only sets
+# the focus while its dates are live (inclusive), then lets go by itself. Keys
+# a block omits fall back to the top-level settings. Blocks must not overlap.
+#   hard_zone_focus — overrides scheduling.hard_zone_focus (null = deficit pick)
+#   ctl_floor       — minimum CTL to defend. When the planned week would end
+#                     below it, easy rides lengthen (up to
+#                     load_targets.easy_max_minutes) — never harder, never on a
+#                     fatigued / readiness-suppressed / ramp-guarded week, and
+#                     never faster than max_weekly_ramp_pct allows.
+# The fueling cut keeps its own window (fueling.start_date/end_date): it spans
+# both the VO2 block and the gap after it.
+blocks:
+  # With sweet spot already weekly, the second quality day is the one place
+  # VO2max work fits, and VO2max is what falls fastest when masters riders lose
+  # volume (loss per decade roughly triples once volume drops >20%). The
+  # session is 5x3 min @ 110-118% FTP (src/workout.ts). Runs inside the cut, so
+  # expect to hold fitness, not build it.
+  - name: "Autumn VO2"
+    start_date: "2026-09-19"
+    end_date: "2026-11-22"
+    hard_zone_focus: vo2
+  # Last winter CTL fell 66 -> 33 (Nov 2025 -> Mar 2026) and eFTP 234 -> 222,
+  # and spring was spent rebuilding it. The floor defends roughly the level the
+  # cut exits at, so spring 2027 starts from there instead of from scratch.
+  # Calories are back at maintenance here (the cut ends 12/6).
+  - name: "Winter base"
+    start_date: "2026-12-07"
+    end_date: "2027-02-28"
+    ctl_floor: 48
 
 # Planned-load targets the planner attaches to each generated workout, so the
 # calendar shows TSS/duration/IF and Intervals.icu folds them into planned CTL.
@@ -214,6 +241,7 @@ scheduling:
 load_targets:
   easy_if: 0.62 # easy Zone 2 intensity factor (watts render from live FTP at push time)
   easy_minutes: 75 # standard easy ride duration → ~48 TSS
+  easy_max_minutes: 120 # ceiling a block's ctl_floor may stretch an easy ride to → ~77 TSS
   long_minutes: 180 # weekly long endurance ride → ~127 TSS (build this up over a block)
   hard_if: 0.88 # hard interval ride IF → ~90 TSS at 75 min
   hard_minutes: 75
