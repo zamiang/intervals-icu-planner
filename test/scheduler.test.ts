@@ -9,7 +9,7 @@ import {
   downgradeOneTier,
 } from "../src/scheduler.js";
 import { emptyDistribution, zoneLabel } from "../src/zones.js";
-import { computeReadiness } from "../src/readiness.js";
+import { computeReadiness, type ReadinessSignal } from "../src/readiness.js";
 import { projectCtl, windowTss } from "../src/blocks.js";
 import type {
   SchedulerInput,
@@ -1456,6 +1456,21 @@ describe("season blocks", () => {
       const plain = schedule(makeInput({ trainingLoad: load }));
       const floored = schedule(
         makeInput({ trainingLoad: load, config: withBlocks([block({ ctl_floor: 60 })]) }),
+      );
+      expect(floored).toEqual(plain);
+    });
+
+    it("does not top up a readiness-suppressed week, even one TSB calls fresh", () => {
+      // Suppression drops fresh only to moderate, which the tier check allows;
+      // the floor must still stand down.
+      const readiness: ReadinessSignal = { status: "suppressed", reason: "HRV down" };
+      const plain = schedule(makeInput({ trainingLoad: freshLoad, readiness }));
+      const floored = schedule(
+        makeInput({
+          trainingLoad: freshLoad,
+          readiness,
+          config: withBlocks([block({ ctl_floor: 60 })]),
+        }),
       );
       expect(floored).toEqual(plain);
     });

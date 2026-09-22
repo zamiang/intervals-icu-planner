@@ -477,9 +477,15 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // Season floor: a block's ctl_floor lengthens easy rides when the week as
   // planned would end with CTL below it. Only on weeks the guards call fresh
   // or moderate — a fatigued tier, suppressed readiness or a firing ramp guard
-  // all mean "back off", and the floor never overrides them.
+  // all mean "back off", and the floor never overrides them. Readiness is
+  // checked directly: suppression only drops a tier, so a TSB-fresh week that
+  // is suppressed still reads "moderate".
   const floor = activeBlock(startDate, config.blocks)?.ctl_floor;
-  if (floor !== undefined && !guardOn && (fatigue === "fresh" || fatigue === "moderate")) {
+  const backOff =
+    guardOn ||
+    input.readiness?.status === "suppressed" ||
+    !(fatigue === "fresh" || fatigue === "moderate");
+  if (floor !== undefined && !backOff) {
     const target = floorTargetTss(trainingLoad.ctl, floor, scheduling.max_weekly_ramp_pct);
     const shortfall = target - windowTss(out, existingEvents, startDate, days);
     if (shortfall > 0) extendEasyRides(out, longIdx, shortfall, config);

@@ -45,6 +45,8 @@ export function projectCtl(ctl: number, weeklyTss: number): number {
 // ramp guard would allow — climbing back after a break still respects
 // max_weekly_ramp_pct rather than prescribing a crash rebuild. This is the
 // week's total, not a top-up: callers compare it against their planned week.
+// With CTL 0 (no wellness data at all) the ramp cap is 0 too, so the floor
+// abstains rather than prescribe load from nothing.
 export function floorTargetTss(ctl: number, floor: number, maxRampPct: number): number {
   const reachFloor = ctl + (floor - ctl) / CTL_WEEK_RESPONSE;
   const rampCap = ctl * (1 + maxRampPct / 100 / CTL_WEEK_RESPONSE);

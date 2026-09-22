@@ -58,6 +58,10 @@ describe("projectCtl / floorTargetTss", () => {
     expect(projectCtl(45, target)).toBeCloseTo(48, 0);
   });
 
+  it("abstains with no CTL history rather than prescribe from nothing", () => {
+    expect(floorTargetTss(0, 48, 7)).toBe(0);
+  });
+
   it("caps the climb back at the ramp guard's rate", () => {
     // CTL 33 after a break, floor 48: reaching 48 in a week would be a ~45%
     // ramp; the cap holds it to max_weekly_ramp_pct.
