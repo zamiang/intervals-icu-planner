@@ -143,11 +143,19 @@ export function formatReadiness(r: ReadinessSignal): string {
     return `suppressed — ${r.reason} (planner downgrades the week one tier)`;
   }
   if (r.status === "normal") {
-    // Surface the step count even when it isn't firing: a week trending toward
-    // the threshold is exactly the context TSB alone can't show.
-    const steps =
-      r.highStepDays !== undefined ? ` (${r.highStepDays} high-step days in window)` : "";
-    return `normal${steps}`;
+    // Surface each signal even when it isn't firing: a trend toward a threshold
+    // is exactly the context TSB alone can't show, and an absent value means
+    // that signal isn't reaching the guard at all.
+    const bits: string[] = [];
+    if (r.hrvDeviationSd !== undefined) {
+      bits.push(`HRV ${r.hrvDeviationSd >= 0 ? "+" : ""}${r.hrvDeviationSd.toFixed(1)}σ`);
+    }
+    if (r.rhrDeltaBpm !== undefined) {
+      const delta = Math.round(r.rhrDeltaBpm);
+      bits.push(`resting HR ${delta >= 0 ? "+" : ""}${delta} bpm`);
+    }
+    if (r.highStepDays !== undefined) bits.push(`${r.highStepDays} high-step days in window`);
+    return bits.length > 0 ? `normal (${bits.join(", ")})` : "normal";
   }
   return "n/a (insufficient HRV/resting-HR/step history)";
 }

@@ -73,6 +73,19 @@ describe("formatReadiness", () => {
       "normal (2 high-step days in window)",
     );
   });
+
+  it("shows HRV and resting-HR deltas on a normal week so the signals are visibly feeding in", () => {
+    expect(
+      formatReadiness({
+        status: "normal",
+        hrvDeviationSd: 0.84,
+        rhrDeltaBpm: -1.5,
+        highStepDays: 0,
+        stepSampleDays: 7,
+      }),
+    ).toBe("normal (HRV +0.8σ, resting HR -1 bpm, 0 high-step days in window)");
+    expect(formatReadiness({ status: "normal", hrvDeviationSd: -0.46 })).toBe("normal (HRV -0.5σ)");
+  });
 });
 
 describe("formatPlan", () => {
