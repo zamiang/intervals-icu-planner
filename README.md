@@ -46,6 +46,16 @@ Workout definitions and scheduling rules live in `config.yaml`:
   `vo2` or `anaerobic`) for a focused block, instead of the zone the recent
   ride mix is most short of (default `null`). Any extra hard days still use the
   deficit pick and never repeat the focus.
+- `blocks` — optional season layer: a list of named, date-ranged blocks
+  (`name`, `start_date`, `end_date`, inclusive, non-overlapping). While a block
+  is live, its `hard_zone_focus` overrides the top-level one (`null` clears it
+  for that block), and its `ctl_floor` defends a minimum CTL: if the planned
+  week would end below the floor, standard easy rides lengthen (up to
+  `load_targets.easy_max_minutes`, default `120`) until it wouldn't. The floor
+  never adds intensity, never touches the long ride, never climbs faster than
+  `max_weekly_ramp_pct`, and does nothing on fatigued, readiness-suppressed or
+  ramp-guarded weeks. `status` and `plan` print the active block, its week, and
+  CTL against the floor.
 - `weight_training_cut` — optional strength routine used instead of
   `weight_training` for weeks inside the `fueling` block window (same loads,
   fewer sets). A race taper takes precedence over it.

@@ -32,10 +32,22 @@ export type HardZone = "threshold" | "vo2" | "anaerobic";
 export interface LoadTargetsConfig {
   easy_if: number; // default 0.62 — intensity factor for easy Zone 2 fills
   easy_minutes: number; // default 75 — duration of a standard easy ride
+  easy_max_minutes: number; // default 120 — ceiling a block's CTL floor may stretch an easy ride to
   long_minutes: number; // default 180 — the one weekly long endurance ride (century durability)
   hard_if: number; // default 0.88 — intensity factor for hard interval rides
   hard_minutes: number; // default 75 — duration of a hard interval ride
   sweet_spot_if: number; // default 0.88 — IF applied to the sweet_spot session (duration from its WorkoutDefinition)
+}
+
+// A date-ranged stretch of the season (see src/blocks.ts). Every field beyond
+// the name and dates is optional; an omitted one leaves the top-level setting
+// in force while the block runs.
+export interface TrainingBlock {
+  name: string;
+  start_date: string; // YYYY-MM-DD, inclusive
+  end_date: string; // YYYY-MM-DD, inclusive
+  hard_zone_focus?: HardZone | null; // overrides scheduling.hard_zone_focus; null = deficit pick for this block
+  ctl_floor?: number; // minimum CTL to defend: easy rides lengthen when the planned week would end below it
 }
 
 export interface PeriodizationConfig {
@@ -136,6 +148,7 @@ export interface Config {
   ftp_sync: FtpSyncConfig;
   holidays: HolidaysConfig;
   fueling: FuelingConfig;
+  blocks?: TrainingBlock[]; // season blocks, sorted and non-overlapping; absent ⇒ no season layer
 }
 
 // --- Intervals.icu ---

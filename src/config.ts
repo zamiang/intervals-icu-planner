@@ -11,6 +11,7 @@ import type {
   PeriodizationConfig,
   ReadinessConfig,
   SchedulingConfig,
+  TrainingBlock,
   WorkoutDefinition,
 } from "./types.js";
 
@@ -38,6 +39,7 @@ const PERIODIZATION_DEFAULTS: PeriodizationConfig = {
 const LOAD_TARGETS_DEFAULTS: LoadTargetsConfig = {
   easy_if: 0.62,
   easy_minutes: 75,
+  easy_max_minutes: 120,
   long_minutes: 180,
   hard_if: 0.88,
   hard_minutes: 75,
@@ -140,6 +142,7 @@ function validateLoadTargets(raw: unknown): Partial<LoadTargetsConfig> {
   const numericFields: (keyof LoadTargetsConfig)[] = [
     "easy_if",
     "easy_minutes",
+    "easy_max_minutes",
     "long_minutes",
     "hard_if",
     "hard_minutes",
@@ -361,6 +364,58 @@ function validatePeriodization(raw: unknown): Partial<PeriodizationConfig> {
   return out;
 }
 
+// Season blocks. Overlap is refused rather than resolved by order: two blocks
+// claiming the same week means one of them is a stale edit, and silently
+// picking one would hide which.
+function validateBlocks(raw: unknown): TrainingBlock[] {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) throw new Error("blocks must be a list");
+  const blocks = raw.map((item, i): TrainingBlock => {
+    if (!item || typeof item !== "object") throw new Error(`blocks[${i}] must be an object`);
+    const obj = item as Record<string, unknown>;
+    const where = typeof obj.name === "string" ? `blocks[${i}] (${obj.name})` : `blocks[${i}]`;
+    if (typeof obj.name !== "string" || obj.name.trim() === "") {
+      throw new Error(`${where}.name must be a non-empty string`);
+    }
+    for (const f of ["start_date", "end_date"] as const) {
+      if (typeof obj[f] !== "string" || !ISO_DATE.test(obj[f] as string)) {
+        throw new Error(`${where}.${f} must be a YYYY-MM-DD date`);
+      }
+    }
+    const block: TrainingBlock = {
+      name: obj.name,
+      start_date: obj.start_date as string,
+      end_date: obj.end_date as string,
+    };
+    if (block.start_date > block.end_date) {
+      throw new Error(`${where}.start_date must not be after end_date`);
+    }
+    if (obj.hard_zone_focus !== undefined) {
+      const v = obj.hard_zone_focus;
+      if (v !== null && !HARD_ZONES.includes(v as HardZone)) {
+        throw new Error(
+          `${where}.hard_zone_focus must be null or one of: ${HARD_ZONES.join(", ")}`,
+        );
+      }
+      block.hard_zone_focus = v as HardZone | null;
+    }
+    if (obj.ctl_floor !== undefined) {
+      if (typeof obj.ctl_floor !== "number" || obj.ctl_floor <= 0) {
+        throw new Error(`${where}.ctl_floor must be a positive number`);
+      }
+      block.ctl_floor = obj.ctl_floor;
+    }
+    return block;
+  });
+  const sorted = [...blocks].sort((a, b) => a.start_date.localeCompare(b.start_date));
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].start_date <= sorted[i - 1].end_date) {
+      throw new Error(`blocks "${sorted[i - 1].name}" and "${sorted[i].name}" overlap`);
+    }
+  }
+  return sorted;
+}
+
 function validateWorkout(raw: unknown, field: string): WorkoutDefinition {
   if (!raw || typeof raw !== "object") {
     throw new Error(`Config missing required field: ${field}`);
@@ -473,6 +528,15 @@ export async function loadConfig(filePath: string): Promise<Config> {
     );
   }
 
+  if (load_targets.easy_max_minutes < load_targets.easy_minutes) {
+    throw new Error(
+      `load_targets.easy_max_minutes (${load_targets.easy_max_minutes}) must not be below ` +
+        `easy_minutes (${load_targets.easy_minutes})`,
+    );
+  }
+
+  const blocks = validateBlocks(doc.blocks);
+
   return {
     weight_training,
     weight_training_taper,
@@ -485,5 +549,6 @@ export async function loadConfig(filePath: string): Promise<Config> {
     ftp_sync,
     holidays,
     fueling,
+    blocks,
   };
 }

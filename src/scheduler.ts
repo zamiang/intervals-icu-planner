@@ -9,6 +9,7 @@ import type {
 import { mostDeficientZone, zoneLabel, type Zone } from "./zones.js";
 import { holidayPlaceholderWorkout } from "./holidays.js";
 import { isWithinBlock } from "./fueling.js";
+import { activeBlock, floorTargetTss, hardZoneFocusOn, windowTss } from "./blocks.js";
 import type { ReadinessSignal } from "./readiness.js";
 
 function addDays(dateStr: string, days: number): string {
@@ -185,8 +186,9 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   const pickHardZone = (): Zone | undefined => {
     // A configured focus (e.g. a VO2max block) claims the first hard day
     // outright, whatever the zone distribution says; any further hard days
-    // fall back to the deficit-driven pick so they never duplicate it.
-    const focus = scheduling.hard_zone_focus;
+    // fall back to the deficit-driven pick so they never duplicate it. An
+    // active season block's focus wins over the top-level setting.
+    const focus = hardZoneFocusOn(startDate, config);
     if (focus && !usedHardZones.has(focus)) {
       usedHardZones.add(focus);
       return focus;
@@ -470,8 +472,49 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     out.push(...sorted);
   }
 
-  attachLoadTargets(out, config, hasExistingLongRide);
+  const longIdx = attachLoadTargets(out, config, hasExistingLongRide);
+
+  // Season floor: a block's ctl_floor lengthens easy rides when the week as
+  // planned would end with CTL below it. Only on weeks the guards call fresh
+  // or moderate — a fatigued tier, suppressed readiness or a firing ramp guard
+  // all mean "back off", and the floor never overrides them. Readiness is
+  // checked directly: suppression only drops a tier, so a TSB-fresh week that
+  // is suppressed still reads "moderate".
+  const floor = activeBlock(startDate, config.blocks)?.ctl_floor;
+  const backOff =
+    guardOn ||
+    input.readiness?.status === "suppressed" ||
+    !(fatigue === "fresh" || fatigue === "moderate");
+  if (floor !== undefined && !backOff) {
+    const target = floorTargetTss(trainingLoad.ctl, floor, scheduling.max_weekly_ramp_pct);
+    const shortfall = target - windowTss(out, existingEvents, startDate, days);
+    if (shortfall > 0) extendEasyRides(out, longIdx, shortfall, config);
+  }
   return out;
+}
+
+// Spread `shortfallTss` of extra load across the week's standard easy rides —
+// never the long ride (its length is a durability choice, not a volume knob)
+// and never by adding intensity, so the 80/20 split holds. Each ride grows
+// evenly in 5-minute steps up to load_targets.easy_max_minutes; a shortfall
+// bigger than that ceiling allows is left unmet rather than forced.
+function extendEasyRides(
+  out: PlannedWorkout[],
+  longIdx: number,
+  shortfallTss: number,
+  config: Config,
+): void {
+  const lt = config.load_targets;
+  const easy = out.filter(
+    (w, i) => i !== longIdx && w.type === "cycling" && w.intensity === "easy",
+  );
+  if (easy.length === 0) return;
+  const tssPerMin = (lt.easy_if * lt.easy_if * 100) / 60;
+  const perRide = Math.ceil(shortfallTss / tssPerMin / easy.length / 5) * 5;
+  for (const w of easy) {
+    w.durationMin = Math.min(lt.easy_max_minutes, (w.durationMin ?? lt.easy_minutes) + perRide);
+    w.load = Math.round((w.durationMin / 60) * lt.easy_if * lt.easy_if * 100);
+  }
 }
 
 // Attach planned-load targets (TSS / duration / IF) to each generated workout so
@@ -482,11 +525,12 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
 // (hasExistingLongRide), in which case no new ride is promoted so the week
 // keeps exactly one long ride. Weights get a duration only (no TSS/IF), which
 // matches how Intervals.icu treats WeightTraining.
+// Returns the index of the promoted long ride, or -1 when none was promoted.
 function attachLoadTargets(
   out: PlannedWorkout[],
   config: Config,
   hasExistingLongRide = false,
-): void {
+): number {
   const lt = config.load_targets;
   const tss = (min: number, ifv: number): number => Math.round((min / 60) * ifv * ifv * 100);
 
@@ -530,4 +574,5 @@ function attachLoadTargets(
       w.load = tss(w.durationMin, lt.hard_if);
     }
   }
+  return longIdx;
 }
