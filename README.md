@@ -95,8 +95,10 @@ it never schedules on top of a session you've already done.
 
 ### Hand-tuned weeks
 
-When the generated plan isn't quite what you want, edit `scripts/week-plan.yaml`
-and push it directly:
+When the generated plan isn't quite what you want, copy
+`scripts/week-plan.example.yaml` to `scripts/week-plan.yaml` (gitignored — hand-
+tuned weeks tend to carry personal health and travel notes), edit it, and push
+it directly:
 
 ```sh
 npm run push-week -- --dry-run               # preview, write nothing
@@ -161,7 +163,7 @@ mirroring `.env`: `INTERVALS_API_KEY` and `HEVY_API_KEY`.
 
 Run it on demand from the Actions tab (`workflow_dispatch`), optionally with
 **dry run** checked to preview without writing. To hand-tune a week instead,
-edit `scripts/week-plan.yaml` and `npm run push-week` before Monday morning —
+edit your local `scripts/week-plan.yaml` and `npm run push-week` before Monday morning —
 the action will leave those days alone. GitHub pauses cron schedules after
 ~60 days without repo activity; re-enable from the Actions tab if that
 happens.
@@ -243,7 +245,7 @@ jump bigger than `ftp_sync.max_change_pct` is refused as bad data — apply it
 manually in Intervals.icu if it's real. `--dry-run` previews the update
 without writing; disable entirely with `ftp_sync.enabled: false`.
 
-Prose descriptions in `config.yaml` and `scripts/week-plan.yaml` never
+Prose descriptions in `config.yaml` and the week plan file never
 hardcode watts: they carry placeholders rendered at push time from the synced
 sport settings — `{ftp}`, `{lthr}`, `{w:88-94}` (watts at % FTP), `{hr:83}`
 (bpm at % LTHR). A placeholder that can't be resolved fails the push loudly
