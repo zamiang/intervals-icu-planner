@@ -181,7 +181,8 @@ export function planPushActions(
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const replace = process.argv.includes("--replace");
-  const file = parseFlag("file") ?? "scripts/week-plan.yaml";
+  const defaultFile = "scripts/week-plan.yaml";
+  const file = parseFlag("file") ?? defaultFile;
   const startArg = parseFlag("start");
   const anchor = startArg ? upcomingMonday(new Date(`${startArg}T00:00:00`)) : upcomingMonday();
 
@@ -191,9 +192,11 @@ async function main() {
     raw = await fs.readFile(file, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(
-        `${file} not found — copy scripts/week-plan.example.yaml to scripts/week-plan.yaml and edit it`,
-      );
+      const hint =
+        file === defaultFile
+          ? ` — copy scripts/week-plan.example.yaml to ${defaultFile} and edit it`
+          : "";
+      throw new Error(`${file} not found${hint}`);
     }
     throw err;
   }
