@@ -1,5 +1,6 @@
 # Editable weekly plan for scripts/push-week.ts — use this when you want to
 # hand-tune a week instead of running the generator (`npm run plan`).
+# Copy this to scripts/week-plan.yaml (gitignored) and edit the copy.
 #
 # Each session has a `day` (Mon..Sun, or a 0-6 offset from the anchor Monday)
 # and either:

@@ -18,3 +18,7 @@ notes/
 
 # Personal anthropometrics for the fuelling model (see .athlete.example.yaml)
 .athlete.yaml
+
+# Hand-tuned week plans carry personal health/travel context (see
+# scripts/week-plan.example.yaml for the template)
+scripts/week-plan.yaml

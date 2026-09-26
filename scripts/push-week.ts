@@ -8,7 +8,9 @@
 //
 // Use this when the generated `npm run plan` isn't quite what you want and you
 // want to schedule a specific week by hand. The plan file format is documented
-// in scripts/week-plan.yaml. By default, days that already have a calendar
+// in scripts/week-plan.example.yaml — copy it to scripts/week-plan.yaml (which
+// is gitignored, since hand-tuned weeks carry personal health context) and
+// edit that. By default, days that already have a calendar
 // event are skipped, so re-running is safe and never duplicates. Pass
 // --replace to update those existing events in place instead (e.g. to push
 // revised planned-load targets onto a week already on the calendar).
@@ -179,12 +181,26 @@ export function planPushActions(
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const replace = process.argv.includes("--replace");
-  const file = parseFlag("file") ?? "scripts/week-plan.yaml";
+  const defaultFile = "scripts/week-plan.yaml";
+  const file = parseFlag("file") ?? defaultFile;
   const startArg = parseFlag("start");
   const anchor = startArg ? upcomingMonday(new Date(`${startArg}T00:00:00`)) : upcomingMonday();
 
   const config = await loadConfig("config.yaml");
-  const doc = parse(await fs.readFile(file, "utf8")) as { sessions?: PlanSession[] };
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      const hint =
+        file === defaultFile
+          ? ` — copy scripts/week-plan.example.yaml to ${defaultFile} and edit it`
+          : "";
+      throw new Error(`${file} not found${hint}`);
+    }
+    throw err;
+  }
+  const doc = parse(raw) as { sessions?: PlanSession[] };
   const sessions = doc?.sessions ?? [];
   if (sessions.length === 0) throw new Error(`No sessions found in ${file}`);
 
