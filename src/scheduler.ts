@@ -363,7 +363,9 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // ride sweet spot and no VO2 at all, and with TSB hovering near zero most
   // weeks read moderate. Fresh weeks keep both sessions; fatigued weeks keep
   // the gentler sweet spot. A hard ride already on this week's calendar covers
-  // the interval side, so the slot stays sweet spot as before.
+  // the interval side, so the slot stays sweet spot as before. A sweet spot
+  // already on the calendar likewise *is* the week's one quality session, so
+  // a moderate week adds no focus session on top of it (see the guard below).
   const moderateFocus =
     intensity === "moderate" && existingHardRides === 0 ? hardZoneFocusOn(startDate, config) : null;
   let lcIdx: number | undefined;
@@ -531,7 +533,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   return out;
 }
 
-// Longest an easy or long ride may run on `date`: scheduling.weekday_max_minutes
+// Longest an easy, long or unstructured hard ride may run on `date`: scheduling.weekday_max_minutes
 // Mon-Fri (a work day can't fit a 3-hour ride), unlimited on the weekend or
 // when unset. Bare YYYY-MM-DD parses as UTC midnight, so getUTCDay is the
 // calendar weekday regardless of host timezone.
@@ -645,7 +647,7 @@ function attachLoadTargets(
     } else if (w.targetZone) {
       sizeFrom(w, hardIntervalWorkout(w.targetZone, w.progressionStep));
     } else {
-      w.durationMin = lt.hard_minutes;
+      w.durationMin = Math.min(lt.hard_minutes, dayCapMinutes(w.date, config));
       w.intensityFactor = lt.hard_if;
       w.load = tss(w.durationMin, lt.hard_if);
     }

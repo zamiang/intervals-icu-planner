@@ -263,8 +263,25 @@ fueling:
     await fs.writeFile(file, VALID_YAML);
     const config = await loadConfig(file);
     expect(config.scheduling.hard_zone_focus).toBeNull();
+    expect(config.scheduling.weekday_max_minutes).toBeNull();
     expect(config.fueling.caffeine_mg_per_kg).toBe(0);
     expect(config.weight_training_cut).toBeUndefined();
+  });
+
+  it("loads weekday_max_minutes and rejects non-positive or non-finite values", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(
+      file,
+      VALID_YAML.replace("scheduling:", "scheduling:\n  weekday_max_minutes: 120"),
+    );
+    expect((await loadConfig(file)).scheduling.weekday_max_minutes).toBe(120);
+    for (const bad of ["0", "-30", ".nan", ".inf", '"two hours"']) {
+      await fs.writeFile(
+        file,
+        VALID_YAML.replace("scheduling:", `scheduling:\n  weekday_max_minutes: ${bad}`),
+      );
+      await expect(loadConfig(file)).rejects.toThrow("weekday_max_minutes");
+    }
   });
 
   it("rejects a hard_zone_focus that is not a hard-day zone", async () => {

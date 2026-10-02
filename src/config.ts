@@ -142,7 +142,7 @@ function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
   }
   if (obj.weekday_max_minutes !== undefined) {
     const v = obj.weekday_max_minutes;
-    if (v !== null && (typeof v !== "number" || v <= 0)) {
+    if (v !== null && (typeof v !== "number" || !Number.isFinite(v) || v <= 0)) {
       throw new Error("scheduling.weekday_max_minutes must be null or a positive number");
     }
     out.weekday_max_minutes = v as number | null;

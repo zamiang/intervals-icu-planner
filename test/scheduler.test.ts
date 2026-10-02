@@ -1632,6 +1632,23 @@ describe("moderate-week zone focus", () => {
     expect(result.some((w) => w.targetZone === "vo2")).toBe(false);
   });
 
+  it("adds no focus session when a sweet spot is already on the calendar", () => {
+    const existing: IntervalsEvent[] = [
+      {
+        id: 1,
+        start_date_local: "2026-04-22T00:00:00",
+        name: "Sweet Spot Intervals",
+        category: "WORKOUT",
+        type: "Ride",
+      } as IntervalsEvent,
+    ];
+    const result = schedule(
+      makeInput({ trainingLoad: moderateLoad, config: vo2Cfg, existingEvents: existing }),
+    );
+    expect(result.some((w) => w.type === "sweet_spot")).toBe(false);
+    expect(result.some((w) => w.intensity === "hard" && w.type === "cycling")).toBe(false);
+  });
+
   it("keeps sweet spot in a fatigued week", () => {
     const result = schedule(
       makeInput({ trainingLoad: { ctl: 50, atl: 65, tsb: -15 }, config: vo2Cfg }),
@@ -1681,6 +1698,28 @@ describe("weekday_max_minutes", () => {
       (w) => w.name === "Long Endurance Ride",
     )!;
     expect(isWeekend(capped.date)).toBe(true);
+    for (const w of schedule(makeInput({ ...thursday, config: capCfg(120) }))) {
+      if (w.type !== "cycling") continue;
+      if (isWeekend(w.date)) continue;
+      expect(w.durationMin, `${w.date} ${w.name}`).toBeLessThanOrEqual(120);
+    }
+  });
+
+  it("caps an unstructured hard ride on a weekday", () => {
+    // No zone distribution and no focus → Phase 2 places an unzoned "Hard Ride"
+    // sized from hard_minutes, which has no steps to keep it short.
+    const cfg: Config = {
+      ...capCfg(60),
+      load_targets: { ...BASE_CONFIG.load_targets, hard_minutes: 150 },
+    };
+    const result = schedule(
+      makeInput({ trainingLoad: { ctl: 50, atl: 40, tsb: 10 }, config: cfg }),
+    );
+    const hard = result.filter((w) => w.name === "Hard Ride");
+    expect(hard.length).toBeGreaterThan(0);
+    for (const w of hard) {
+      expect(w.durationMin).toBe(isWeekend(w.date) ? 150 : 60);
+    }
   });
 
   it("promotes no long ride when both weekend days are taken", () => {
