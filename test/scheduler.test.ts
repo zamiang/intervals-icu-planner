@@ -1580,6 +1580,8 @@ describe("block progression", () => {
     const ss = result.find((w) => w.type === "sweet_spot")!;
     expect(ss.progressionStep).toBeUndefined();
     expect(ss.durationMin).toBe(72);
+    // The long ride steps back too, never below long_minutes.
+    expect(result.find((w) => w.name === "Long Endurance Ride")!.durationMin).toBe(180);
   });
 
   it("leaves sessions at rung 0 in a block without progression", () => {

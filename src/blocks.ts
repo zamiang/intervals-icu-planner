@@ -85,6 +85,9 @@ export const WEEKS_PER_STEP = 2;
 // guards already own "this week is too much". A back-off week (fatigue tier,
 // suppressed readiness, ramp guard) drops one step so a tired week repeats the
 // previous rung instead of attempting a new one.
+// The whole planning week takes the step (and block membership) of its first
+// day: a week straddling a block edge is judged by where it starts. Block
+// dates that fall on week boundaries avoid the ambiguity.
 export function progressionStep(date: string, config: Config, backOff = false): number {
   const block = activeBlock(date, config.blocks);
   if (!block?.progression) return 0;
