@@ -1742,6 +1742,35 @@ describe("weekday_max_minutes", () => {
     }
   });
 
+  it("rolls a floor shortfall the weekday cap clips over to weekend easy rides", () => {
+    // Mon..Sun week: Sunday takes the long ride, Saturday stays a standard
+    // easy ride that can absorb what the capped weekday rides can't.
+    const cfg: Config = {
+      ...capCfg(80),
+      load_targets: { ...BASE_CONFIG.load_targets, easy_max_minutes: 150 },
+      blocks: [{ name: "W", start_date: "2026-04-01", end_date: "2026-05-31", ctl_floor: 80 }],
+    };
+    const input = makeInput({
+      trainingLoad: { ctl: 50, atl: 50, tsb: 0 },
+      config: cfg,
+    });
+    const result = schedule(input);
+    const easy = result.filter(
+      (w) => w.type === "cycling" && w.intensity === "easy" && w.name === "Easy Ride",
+    );
+    const weekday = easy.filter((w) => !isWeekend(w.date));
+    const weekend = easy.filter((w) => isWeekend(w.date));
+    expect(weekday.length).toBeGreaterThan(0);
+    expect(weekend.length).toBeGreaterThan(0);
+    for (const w of weekday) expect(w.durationMin).toBe(80);
+    // The weekend picks up what the weekdays couldn't — past what an even
+    // split alone would have given it.
+    for (const w of weekend) expect(w.durationMin).toBeGreaterThan(80);
+    // This floor asks for more than every ceiling allows, so the weekend ride
+    // fills to easy_max_minutes and the rest is left unmet, not forced.
+    for (const w of weekend) expect(w.durationMin).toBe(150);
+  });
+
   it("caps a ctl_floor stretch on weekdays", () => {
     const cfg: Config = {
       ...capCfg(80),

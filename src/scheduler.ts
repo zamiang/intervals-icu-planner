@@ -547,8 +547,11 @@ function dayCapMinutes(date: string, config: Config): number {
 // Spread `shortfallTss` of extra load across the week's standard easy rides —
 // never the long ride (its length is a durability choice, not a volume knob)
 // and never by adding intensity, so the 80/20 split holds. Each ride grows
-// evenly in 5-minute steps up to load_targets.easy_max_minutes; a shortfall
-// bigger than that ceiling allows is left unmet rather than forced.
+// evenly in 5-minute steps up to its ceiling: load_targets.easy_max_minutes,
+// and on a work day weekday_max_minutes. Minutes a ride can't take because it
+// hit its ceiling roll over to the rides that still have room (in practice the
+// weekend); a shortfall bigger than every ceiling allows is left unmet rather
+// than forced.
 function extendEasyRides(
   out: PlannedWorkout[],
   longIdx: number,
@@ -561,14 +564,22 @@ function extendEasyRides(
   );
   if (easy.length === 0) return;
   const tssPerMin = (lt.easy_if * lt.easy_if * 100) / 60;
-  const perRide = Math.ceil(shortfallTss / tssPerMin / easy.length / 5) * 5;
+  const ceiling = (w: PlannedWorkout): number =>
+    Math.min(lt.easy_max_minutes, dayCapMinutes(w.date, config));
+  for (const w of easy) w.durationMin = Math.min(w.durationMin ?? lt.easy_minutes, ceiling(w));
+  let remaining = shortfallTss / tssPerMin;
+  for (;;) {
+    const open = easy.filter((w) => w.durationMin! < ceiling(w));
+    if (remaining <= 0 || open.length === 0) break;
+    const perRide = Math.ceil(remaining / open.length / 5) * 5;
+    for (const w of open) {
+      const add = Math.min(perRide, ceiling(w) - w.durationMin!);
+      w.durationMin! += add;
+      remaining -= add;
+    }
+  }
   for (const w of easy) {
-    w.durationMin = Math.min(
-      lt.easy_max_minutes,
-      dayCapMinutes(w.date, config),
-      (w.durationMin ?? lt.easy_minutes) + perRide,
-    );
-    w.load = Math.round((w.durationMin / 60) * lt.easy_if * lt.easy_if * 100);
+    w.load = Math.round((w.durationMin! / 60) * lt.easy_if * lt.easy_if * 100);
   }
 }
 
