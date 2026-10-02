@@ -9,7 +9,14 @@ import type {
 import { mostDeficientZone, zoneLabel, type Zone } from "./zones.js";
 import { holidayPlaceholderWorkout } from "./holidays.js";
 import { isWithinBlock } from "./fueling.js";
-import { activeBlock, floorTargetTss, hardZoneFocusOn, windowTss } from "./blocks.js";
+import {
+  activeBlock,
+  floorTargetTss,
+  hardZoneFocusOn,
+  longRideMinutes,
+  progressionStep,
+  windowTss,
+} from "./blocks.js";
 import type { ReadinessSignal } from "./readiness.js";
 import { hardIntervalWorkout, sweetSpotWorkout, type StructuredWorkout } from "./workout.js";
 
@@ -270,6 +277,16 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   const intensity: CyclingIntensity =
     guardOn && baseIntensity === "hard" ? "moderate" : baseIntensity;
   const veryFatigued = fatigue === "very_fatigued";
+  // A week the guards call "back off": the ramp guard fired, readiness is
+  // suppressed, or the tier is fatigued or worse. Readiness is checked directly
+  // since suppression only drops a tier, so a TSB-fresh suppressed week still
+  // reads "moderate". Gates both the season floor and the progression step.
+  const backOff =
+    guardOn ||
+    input.readiness?.status === "suppressed" ||
+    !(fatigue === "fresh" || fatigue === "moderate");
+  const step = progressionStep(startDate, config, backOff);
+  const stepField = step > 0 ? { progressionStep: step } : {};
   // Polarized stacking — co-locating weights onto a hard day — only makes sense
   // when there's capacity to absorb a concentrated stress day. On recovery
   // weeks (fatigued or worse) it just piles two hard sessions together and
@@ -350,6 +367,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
         name: sweet_spot.name,
         description: sweet_spot.description,
         intensity: "hard",
+        ...stepField,
       });
     }
   }
@@ -377,7 +395,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
         name: targetZone ? `${zoneLabel(targetZone)} Intervals` : "Hard Ride",
         description: buildCyclingDescription("hard", targetZone),
         intensity: "hard",
-        ...(targetZone ? { targetZone } : {}),
+        ...(targetZone ? { targetZone, ...stepField } : {}),
       });
     }
   }
@@ -473,19 +491,17 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     out.push(...sorted);
   }
 
-  const longIdx = attachLoadTargets(out, config, hasExistingLongRide);
+  const longIdx = attachLoadTargets(
+    out,
+    config,
+    hasExistingLongRide,
+    longRideMinutes(step, config),
+  );
 
   // Season floor: a block's ctl_floor lengthens easy rides when the week as
   // planned would end with CTL below it. Only on weeks the guards call fresh
-  // or moderate — a fatigued tier, suppressed readiness or a firing ramp guard
-  // all mean "back off", and the floor never overrides them. Readiness is
-  // checked directly: suppression only drops a tier, so a TSB-fresh week that
-  // is suppressed still reads "moderate".
+  // or moderate — never on a back-off week (see `backOff` above).
   const floor = activeBlock(startDate, config.blocks)?.ctl_floor;
-  const backOff =
-    guardOn ||
-    input.readiness?.status === "suppressed" ||
-    !(fatigue === "fresh" || fatigue === "moderate");
   if (floor !== undefined && !backOff) {
     const target = floorTargetTss(trainingLoad.ctl, floor, scheduling.max_weekly_ramp_pct);
     const shortfall = target - windowTss(out, existingEvents, startDate, days);
@@ -539,6 +555,7 @@ function attachLoadTargets(
   out: PlannedWorkout[],
   config: Config,
   hasExistingLongRide = false,
+  longMinutes = config.load_targets.long_minutes,
 ): number {
   const lt = config.load_targets;
   const tss = (min: number, ifv: number): number => Math.round((min / 60) * ifv * ifv * 100);
@@ -567,21 +584,21 @@ function attachLoadTargets(
       continue;
     }
     if (w.type === "sweet_spot") {
-      sizeFrom(w, sweetSpotWorkout());
+      sizeFrom(w, sweetSpotWorkout(w.progressionStep));
       continue;
     }
     // cycling
     if (w.intensity === "easy") {
       const isLong = i === longIdx;
-      w.durationMin = isLong ? lt.long_minutes : lt.easy_minutes;
+      w.durationMin = isLong ? longMinutes : lt.easy_minutes;
       w.intensityFactor = lt.easy_if;
       w.load = tss(w.durationMin, lt.easy_if);
       if (isLong) {
         w.name = "Long Endurance Ride";
-        w.description = `Weekly long endurance ride — steady Zone 2, ~${(lt.long_minutes / 60).toFixed(1)}h. Practice century fueling (~60-90g carb/hr). The durability anchor of the week.`;
+        w.description = `Weekly long endurance ride — steady Zone 2, ~${(longMinutes / 60).toFixed(1)}h. Practice century fueling (~60-90g carb/hr). The durability anchor of the week.`;
       }
     } else if (w.targetZone) {
-      sizeFrom(w, hardIntervalWorkout(w.targetZone));
+      sizeFrom(w, hardIntervalWorkout(w.targetZone, w.progressionStep));
     } else {
       w.durationMin = lt.hard_minutes;
       w.intensityFactor = lt.hard_if;

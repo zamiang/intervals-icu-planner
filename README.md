@@ -54,8 +54,13 @@ Workout definitions and scheduling rules live in `config.yaml`:
   `load_targets.easy_max_minutes`, default `120`) until it wouldn't. The floor
   never adds intensity, never touches the long ride, never climbs faster than
   `max_weekly_ramp_pct`, and does nothing on fatigued, readiness-suppressed or
-  ramp-guarded weeks. `status` and `plan` print the active block, its week, and
-  CTL against the floor.
+  ramp-guarded weeks. `progression: true` makes the block progressive: every
+  two block weeks the sweet-spot and interval sessions step up one rung of
+  their ladders (`src/workout.ts`, e.g. VO2 5x3 → 6x3 → 5x4 → 6x4 → 5x5) and
+  the long ride grows 15 min, up to `load_targets.long_max_minutes` (default
+  `long_minutes`, i.e. no growth). A fatigued, readiness-suppressed or
+  ramp-guarded week repeats the previous rung. `status` and `plan` print the
+  active block, its week, its progression step, and CTL against the floor.
 - `weight_training_cut` — optional strength routine used instead of
   `weight_training` for weeks inside the `fueling` block window (same loads,
   fewer sets). A race taper takes precedence over it.
@@ -78,6 +83,7 @@ Workout definitions and scheduling rules live in `config.yaml`:
   the century durability anchor. Sweet-spot and zoned interval days are sized
   from their structured steps (duration and an NP-estimated IF), so they need no
   keys here. Keys: `easy_if`, `easy_minutes`, `easy_max_minutes`, `long_minutes`,
+  `long_max_minutes`,
   and `hard_if`/`hard_minutes` for an unzoned "Hard Ride" only.
 
 ## Commands

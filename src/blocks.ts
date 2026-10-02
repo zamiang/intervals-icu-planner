@@ -73,3 +73,31 @@ export function windowTss(
     .reduce((s, e) => s + (e.icu_training_load ?? 0), 0);
   return planned.reduce((s, w) => s + (w.load ?? 0), 0) + existingTss;
 }
+
+// Weeks per ladder rung. Two weeks on a rung is enough to complete it a couple
+// of times before it grows; one would outrun the ~6-week adaptation horizon of
+// a 10-12 week block by its midpoint.
+export const WEEKS_PER_STEP = 2;
+
+// Progression step for the week starting `date`: 0 outside a block that sets
+// `progression: true`, otherwise one step per WEEKS_PER_STEP block weeks.
+// Time-based on purpose — the planner keeps no state between weeks, and the
+// guards already own "this week is too much". A back-off week (fatigue tier,
+// suppressed readiness, ramp guard) drops one step so a tired week repeats the
+// previous rung instead of attempting a new one.
+// The whole planning week takes the step (and block membership) of its first
+// day: a week straddling a block edge is judged by where it starts. Block
+// dates that fall on week boundaries avoid the ambiguity.
+export function progressionStep(date: string, config: Config, backOff = false): number {
+  const block = activeBlock(date, config.blocks);
+  if (!block?.progression) return 0;
+  const step = Math.floor((blockWeek(date, block).week - 1) / WEEKS_PER_STEP);
+  return Math.max(0, backOff ? step - 1 : step);
+}
+
+// The weekly long ride at `step`: +15 min per step from load_targets.long_minutes,
+// capped at long_max_minutes (which defaults to long_minutes — no growth).
+export function longRideMinutes(step: number, config: Config): number {
+  const lt = config.load_targets;
+  return Math.min(lt.long_max_minutes, lt.long_minutes + 15 * step);
+}

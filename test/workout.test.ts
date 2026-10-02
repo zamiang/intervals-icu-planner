@@ -4,6 +4,7 @@ import {
   sweetSpotWorkout,
   hardIntervalWorkout,
   structuredWorkoutFor,
+  INTERVAL_LADDERS,
 } from "../src/workout.js";
 import type { PlannedWorkout } from "../src/types.js";
 
@@ -86,6 +87,33 @@ describe("hardIntervalWorkout", () => {
       expect(ifv).toBeGreaterThan(0.75);
       expect(ifv).toBeLessThan(1);
     }
+  });
+
+  it("climbs each ladder, adding work time at every rung and holding at the top", () => {
+    const work = (text: string): number => {
+      const m = /Main Set (\d+)x\n- (\d+)m/.exec(text)!;
+      return Number(m[1]) * Number(m[2]);
+    };
+    for (const z of ["threshold", "vo2", "anaerobic"] as const) {
+      const ladder = INTERVAL_LADDERS[z];
+      for (let i = 1; i < ladder.length; i++) {
+        expect(work(hardIntervalWorkout(z, i).text)).toBeGreaterThanOrEqual(
+          work(hardIntervalWorkout(z, i - 1).text),
+        );
+      }
+      expect(hardIntervalWorkout(z, 99).text).toBe(hardIntervalWorkout(z, ladder.length - 1).text);
+    }
+    expect(hardIntervalWorkout("vo2", 4).text).toContain("Main Set 5x\n- 5m 105-112% VO2 Max");
+    expect(sweetSpotWorkout(2).text).toContain("Main Set 2x\n- 20m 88-94% Sweet spot");
+    expect(sweetSpotWorkout(3).text).toContain("20m 90-95%");
+    expect(sweetSpotWorkout(-1).text).toBe(sweetSpotWorkout(0).text);
+  });
+
+  it("builds the stamped progression step from a planned workout", () => {
+    const s = structuredWorkoutFor(
+      planned({ intensity: "hard", targetZone: "vo2", progressionStep: 2 }),
+    );
+    expect(s?.text).toContain("Main Set 5x\n- 4m 106-115% VO2 Max");
   });
 
   it("falls back to the sweet-spot session for the sweet_spot zone", () => {
