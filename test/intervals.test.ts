@@ -350,12 +350,26 @@ describe("IntervalsClient", () => {
         icu_zone_times: [600, 1200, 1800, 600, 0, 0, 0],
         icu_ss_time: null,
         icu_rolling_ftp: 233,
+        vent_eff: null,
       });
       expect(activities[1].icu_intensity).toBeNull();
       expect(activities[1].icu_zone_times).toBeNull();
       expect(activities[1].icu_ss_time).toBeNull();
       expect(activities[1].icu_rolling_ftp).toBeNull(); // missing eFTP → null
       expect(activities[1].start_date).toBe(""); // missing start_date → "" (used by the Hevy matcher)
+    });
+
+    it("reads the VentEff custom field into vent_eff, nulling non-positive values", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { id: "i1", type: "VirtualRide", VentEff: 24.6 },
+          { id: "i2", type: "Ride", VentEff: 0 },
+          { id: "i3", type: "Ride" },
+        ],
+      });
+      const activities = await client.getActivities("2026-09-01", "2026-09-30");
+      expect(activities.map((a) => a.vent_eff)).toEqual([24.6, null, null]);
     });
 
     it("normalizes the live API shape: percent IF and object-array zone times", async () => {

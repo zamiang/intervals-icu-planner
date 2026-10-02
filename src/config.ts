@@ -93,6 +93,13 @@ const READINESS_DEFAULTS: ReadinessConfig = {
   step_lookback_days: 7,
   step_days_required: 4,
   min_step_samples: 5,
+  vent_enabled: true,
+  vent_recent_days: 7,
+  vent_baseline_days: 42,
+  vent_min_recent_rides: 2,
+  vent_min_baseline_rides: 5,
+  vent_drop_pct: 12,
+  vent_epoch_start: null,
 };
 
 function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
@@ -165,7 +172,7 @@ function validateReadiness(raw: unknown): Partial<ReadinessConfig> {
   }
   const obj = raw as Record<string, unknown>;
   const out: Partial<ReadinessConfig> = {};
-  const booleanFields = ["enabled", "steps_enabled"] as const;
+  const booleanFields = ["enabled", "steps_enabled", "vent_enabled"] as const;
   for (const field of booleanFields) {
     if (obj[field] === undefined) continue;
     if (typeof obj[field] !== "boolean") {
@@ -176,7 +183,10 @@ function validateReadiness(raw: unknown): Partial<ReadinessConfig> {
   // Exclude the boolean keys (validated above) so the indexed write type stays
   // `number` — this lets us use `as number` like the sibling validators instead
   // of an `as never` escape hatch.
-  const numericFields: Exclude<keyof ReadinessConfig, (typeof booleanFields)[number]>[] = [
+  const numericFields: Exclude<
+    keyof ReadinessConfig,
+    (typeof booleanFields)[number] | "vent_epoch_start"
+  >[] = [
     "recent_days",
     "baseline_days",
     "min_baseline_samples",
@@ -187,6 +197,11 @@ function validateReadiness(raw: unknown): Partial<ReadinessConfig> {
     "step_lookback_days",
     "step_days_required",
     "min_step_samples",
+    "vent_recent_days",
+    "vent_baseline_days",
+    "vent_min_recent_rides",
+    "vent_min_baseline_rides",
+    "vent_drop_pct",
   ];
   for (const field of numericFields) {
     if (obj[field] === undefined) continue;
@@ -194,6 +209,13 @@ function validateReadiness(raw: unknown): Partial<ReadinessConfig> {
       throw new Error(`readiness.${field} must be a number`);
     }
     out[field] = obj[field] as number;
+  }
+  if (obj.vent_epoch_start !== undefined) {
+    const v = obj.vent_epoch_start;
+    if (v !== null && (typeof v !== "string" || !ISO_DATE.test(v))) {
+      throw new Error("readiness.vent_epoch_start must be a YYYY-MM-DD date or null");
+    }
+    out.vent_epoch_start = v;
   }
   return out;
 }

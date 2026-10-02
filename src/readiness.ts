@@ -1,4 +1,4 @@
-import type { WellnessEntry, Config } from "./types.js";
+import type { Activity, WellnessEntry, Config } from "./types.js";
 
 export type ReadinessStatus = "suppressed" | "normal" | "unknown";
 
@@ -8,6 +8,7 @@ export interface ReadinessSignal {
   rhrDeltaBpm?: number; // recent resting-HR median − baseline median; positive = elevated
   highStepDays?: number; // days in the step lookback window at or above `step_threshold`; undefined when the step signal abstained
   stepSampleDays?: number; // days in that window that carried a step count at all, so callers can tell "no high-step days" from "no step data"
+  ventDeltaPct?: number; // (recent VentEff median ÷ baseline median − 1)·100; negative = more breathing for the same power; undefined when the ventilation signal abstained
   reason?: string; // human-readable summary for the status line, set only when suppressed
 }
 
@@ -54,6 +55,47 @@ export function readinessLookbackDays(config: Config): number {
   return Math.max(r.baseline_days + r.recent_days, r.steps_enabled ? r.step_lookback_days : 0);
 }
 
+// Activity history the ventilation signal needs fetched behind "today" —
+// separate from the wellness lookback because it comes from a different
+// endpoint, and callers already fetch a shorter activity window for other uses.
+export function readinessActivityLookbackDays(config: Config): number {
+  const r = config.readiness;
+  return r.vent_enabled ? r.vent_recent_days + r.vent_baseline_days : 0;
+}
+
+// Fatigue from ventilation (Tymewear). Each ride's `VentEff` is endurance-band
+// watts per unit of ventilation; tired legs recruit extra fibres that burn more
+// carbohydrate and produce more CO2, so the same power costs more air. Medians
+// on both sides because single rides scatter ~7% (indoor vs outdoor, heat, a
+// short band). Rides before `vent_epoch_start` are dropped: the strap's
+// uncalibrated scale shifts with hardware swaps, and a baseline straddling one
+// would read as a fitness change.
+function evaluateVent(
+  activities: Activity[],
+  latest: string,
+  r: Config["readiness"],
+): { ventDeltaPct?: number; low: boolean } {
+  if (!r.vent_enabled) return { low: false };
+  const recentStart = isoMinusDays(latest, r.vent_recent_days - 1);
+  const baselineStart = isoMinusDays(latest, r.vent_recent_days - 1 + r.vent_baseline_days);
+  const floor =
+    r.vent_epoch_start && r.vent_epoch_start > baselineStart ? r.vent_epoch_start : baselineStart;
+  const recent: number[] = [];
+  const baseline: number[] = [];
+  for (const a of activities) {
+    const v = a.vent_eff;
+    if (typeof v !== "number" || v <= 0) continue;
+    const day = a.start_date_local.slice(0, 10);
+    if (day < floor || day > latest) continue;
+    (day >= recentStart ? recent : baseline).push(v);
+  }
+  if (recent.length < r.vent_min_recent_rides || baseline.length < r.vent_min_baseline_rides) {
+    return { low: false };
+  }
+  const ventDeltaPct = (median(recent) / median(baseline) - 1) * 100;
+  return { ventDeltaPct, low: ventDeltaPct <= -r.vent_drop_pct };
+}
+
 // Non-bike load from daily steps. CTL/ATL/TSB are built from logged activity
 // TSS alone, so nine days of 15-20k steps on a hiking trip leave TSB reading
 // "fresh" while the legs carry a week of real work. Counting *days over a
@@ -94,11 +136,16 @@ function evaluateSteps(
 // that against the mean ± SD of the preceding `baseline_days` (the
 // HRV4Training/Oura "normal range" approach). A sustained run of high-step days
 // (see evaluateSteps) suppresses on its own too, covering the non-bike load
-// TSB cannot see. Returns "suppressed" only — like the CTL ramp guard,
+// TSB cannot see, and so does a sustained drop in ventilatory efficiency on
+// Tymewear rides (see evaluateVent). Returns "suppressed" only — like the CTL ramp guard,
 // readiness can downgrade a week but never inflate it. When readiness is
 // disabled or no input has enough data, returns "unknown" and the scheduler
 // proceeds on TSB alone, exactly as before this existed.
-export function computeReadiness(range: WellnessEntry[], config: Config): ReadinessSignal {
+export function computeReadiness(
+  range: WellnessEntry[],
+  config: Config,
+  activities: Activity[] = [],
+): ReadinessSignal {
   const r = config.readiness;
   if (!r?.enabled) return { status: "unknown" };
 
@@ -155,12 +202,22 @@ export function computeReadiness(range: WellnessEntry[], config: Config): Readin
       ? { stepSampleDays: stepSignal.stepSampleDays }
       : {}),
   };
+  // Windowed on the same anchor as HRV/RHR so "recent" means the same days for
+  // every input.
+  const ventSignal = evaluateVent(activities, latest, r);
+  const ventFields =
+    ventSignal.ventDeltaPct !== undefined ? { ventDeltaPct: ventSignal.ventDeltaPct } : {};
 
   const haveHrv = recHrv.length >= MIN_RECENT_SAMPLES && baseHrv.length >= r.min_baseline_samples;
   const haveRhr = recRhr.length >= MIN_RECENT_SAMPLES && baseRhr.length >= r.min_baseline_samples;
   // "unknown" only when *nothing* is judgeable. A usable step window is a
   // verdict even with no HRV/RHR history at all.
-  if (!haveHrv && !haveRhr && stepSignal.highStepDays === undefined) {
+  if (
+    !haveHrv &&
+    !haveRhr &&
+    stepSignal.highStepDays === undefined &&
+    ventSignal.ventDeltaPct === undefined
+  ) {
     return { status: "unknown" };
   }
 
@@ -178,7 +235,7 @@ export function computeReadiness(range: WellnessEntry[], config: Config): Readin
   const hrvLow = hrvDeviationSd !== undefined && hrvDeviationSd <= -r.hrv_drop_sd;
   const rhrHigh = rhrDeltaBpm !== undefined && rhrDeltaBpm >= r.rhr_rise_bpm;
 
-  if (hrvLow || rhrHigh || stepSignal.high) {
+  if (hrvLow || rhrHigh || stepSignal.high || ventSignal.low) {
     const bits: string[] = [];
     if (hrvLow) bits.push(`HRV ${hrvDeviationSd!.toFixed(1)}σ below baseline`);
     if (rhrHigh) bits.push(`resting HR +${rhrDeltaBpm!.toFixed(0)} bpm`);
@@ -188,13 +245,19 @@ export function computeReadiness(range: WellnessEntry[], config: Config): Readin
           `≥ ${r.step_threshold.toLocaleString("en-US")} steps`,
       );
     }
+    if (ventSignal.low) {
+      bits.push(
+        `endurance-ride ventilatory efficiency ${Math.abs(ventSignal.ventDeltaPct!).toFixed(0)}% below baseline`,
+      );
+    }
     return {
       status: "suppressed",
       hrvDeviationSd,
       rhrDeltaBpm,
       ...stepCounts,
+      ...ventFields,
       reason: bits.join(", "),
     };
   }
-  return { status: "normal", hrvDeviationSd, rhrDeltaBpm, ...stepCounts };
+  return { status: "normal", hrvDeviationSd, rhrDeltaBpm, ...stepCounts, ...ventFields };
 }

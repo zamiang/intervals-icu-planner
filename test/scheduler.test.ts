@@ -104,6 +104,13 @@ const BASE_CONFIG: Config = {
     step_lookback_days: 7,
     step_days_required: 4,
     min_step_samples: 5,
+    vent_enabled: true,
+    vent_recent_days: 7,
+    vent_baseline_days: 42,
+    vent_min_recent_rides: 2,
+    vent_min_baseline_rides: 5,
+    vent_drop_pct: 12,
+    vent_epoch_start: null,
   },
 };
 

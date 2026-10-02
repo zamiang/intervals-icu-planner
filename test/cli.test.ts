@@ -86,6 +86,12 @@ describe("formatReadiness", () => {
     ).toBe("normal (HRV +0.8σ, resting HR -1 bpm, 0 high-step days in window)");
     expect(formatReadiness({ status: "normal", hrvDeviationSd: -0.46 })).toBe("normal (HRV -0.5σ)");
   });
+
+  it("shows the ventilatory-efficiency delta on a normal week", () => {
+    expect(formatReadiness({ status: "normal", hrvDeviationSd: 0.2, ventDeltaPct: -4.6 })).toBe(
+      "normal (HRV +0.2σ, vent efficiency -5%)",
+    );
+  });
 });
 
 describe("formatPlan", () => {

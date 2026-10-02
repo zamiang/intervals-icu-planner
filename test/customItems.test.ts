@@ -103,11 +103,11 @@ describe("planSync", () => {
 });
 
 describe("CUSTOM_ITEM_DEFS", () => {
-  it("defines the three charts and three fields with unique names", () => {
+  it("defines the four charts and four fields with unique names", () => {
     const charts = CUSTOM_ITEM_DEFS.filter((d) => d.type === "FITNESS_CHART");
     const fields = CUSTOM_ITEM_DEFS.filter((d) => d.type === "ACTIVITY_FIELD");
-    expect(charts).toHaveLength(3);
-    expect(fields).toHaveLength(3);
+    expect(charts).toHaveLength(4);
+    expect(fields).toHaveLength(4);
     const names = CUSTOM_ITEM_DEFS.map((d) => `${d.type}:${d.name}`);
     expect(new Set(names).size).toBe(names.length);
   });
@@ -136,5 +136,69 @@ describe("CUSTOM_ITEM_DEFS", () => {
         expect(filters[0].value).toContain("Ride");
       }
     }
+  });
+});
+
+// Run a field script the way the Intervals.icu sandbox does: the block's last
+// expression is the stored value. A direct eval returns a block's completion
+// value and sees the enclosing `icu` parameter, so the script runs verbatim.
+function runField(code: string, icu: unknown): unknown {
+  const def = CUSTOM_ITEM_DEFS.find(
+    (d) => d.type === "ACTIVITY_FIELD" && (d.content as { code: string }).code === code,
+  )!;
+  const script = (def.content as { script: string }).script;
+  return new Function("icu", `return eval(${JSON.stringify(script)})`)(icu);
+}
+
+// A synthetic ride: `n` seconds at `watts`, breathing `br` breaths/min of
+// `tv` tidal volume. Tidal volume wobbles ±1 so the Tymewear gate sees a live
+// stream; `ve2` scales second-half ventilation for drift/decoupling cases.
+function strapRide(
+  n: number,
+  opts: {
+    watts?: number;
+    br?: number;
+    tv?: number;
+    ve2?: number;
+    flatTv?: boolean;
+    noTv?: boolean;
+  } = {},
+) {
+  const { watts = 150, br = 30, tv = 200, ve2 = 1, flatTv = false, noTv = false } = opts;
+  const half = n >> 1;
+  const streams: Record<string, number[]> = {
+    fixed_watts: Array.from({ length: n }, () => watts),
+    respiration: Array.from({ length: n }, (_, i) => br * (i >= half ? ve2 : 1)),
+  };
+  if (!noTv)
+    streams.tidal_volume = Array.from({ length: n }, (_, i) =>
+      flatTv ? tv : tv + (i % 2 ? 1 : -1),
+    );
+  return { streams, activity: { icu_ftp: 230 } };
+}
+
+describe("breathing field scripts", () => {
+  it("VentEff: endurance-band watts per unit ventilation, scaled ×1000", () => {
+    // 150 W is 65% of 230 FTP; VE ≈ 30 × 200 → 150 / 6000 × 1000 = 25.
+    expect(runField("VentEff", strapRide(3600)) as number).toBeCloseTo(25, 1);
+  });
+
+  it("VentEff: no value without 20 minutes in the endurance band", () => {
+    expect(runField("VentEff", strapRide(1700))).toBeNull(); // 10 min skipped + < 20 in band
+    expect(runField("VentEff", strapRide(3600, { watts: 220 }))).toBeNull(); // threshold, not endurance
+  });
+
+  it("all breathing fields reject rides without the strap or with a flatlined tidal volume", () => {
+    for (const code of ["VentEff", "RespDrift", "RespDecoupling"]) {
+      // Edge 840's HR-derived breathing rate alone: respiration but no tidal volume.
+      expect(runField(code, strapRide(3600, { noTv: true }))).toBeNull();
+      // Strap dropout: tidal volume pinned at one value all ride.
+      expect(runField(code, strapRide(3600, { flatTv: true }))).toBeNull();
+    }
+  });
+
+  it("RespDecoupling uses ventilation: 10% more air in the 2nd half at equal power ≈ 10%", () => {
+    expect(runField("RespDecoupling", strapRide(3600, { ve2: 1.1 })) as number).toBeCloseTo(10, 0);
+    expect(runField("RespDrift", strapRide(3600, { ve2: 1.1 })) as number).toBeCloseTo(10, 0);
   });
 });

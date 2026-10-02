@@ -132,11 +132,24 @@ const TEMP_DRIFT_SCRIPT = `{
   v
 }`;
 
+// Tymewear gate shared by the breathing scripts. The Edge 840 also writes a
+// `respiration` stream on rides without the strap — its own breathing-rate
+// estimate from the HR strap, smooth 5-second steps — so `respiration` alone
+// does not mean Tymewear. Only the strap records `tidal_volume`, and only a
+// tidal-volume stream that actually moves counts: on a dropout the strap
+// flatlines at one value for the whole ride (seen Nov 30–Dec 7 2025), which
+// would read as a perfectly steady breath. Leaves `tv` null when the gate fails.
+const TYMEWEAR_GATE = `let tv = icu.streams.tidal_volume
+    let live = 0
+    if (tv) for (let i = 1; i < tv.length; i++) if (tv[i] > 0 && tv[i] != tv[i - 1]) live++
+    if (live < 300) tv = null`;
+
 const RESP_DRIFT_SCRIPT = `{
   let v = null
   try {
     let r = icu.streams.respiration
-    if (r && r.length >= 2400) {
+    ${TYMEWEAR_GATE}
+    if (tv && r && r.length >= 2400) {
       let n = r.length, h = n >> 1, s1 = 0, c1 = 0, s2 = 0, c2 = 0
       for (let i = 0; i < h; i++) if (r[i] != null && r[i] > 0) { s1 += r[i]; c1++ }
       for (let i = h; i < n; i++) if (r[i] != null && r[i] > 0) { s2 += r[i]; c2++ }
@@ -146,21 +159,57 @@ const RESP_DRIFT_SCRIPT = `{
   v
 }`;
 
+// Power:ventilation decoupling. Ventilation (VE) is breathing rate × tidal
+// volume — the quantity the strap is validated for and what tracks metabolic
+// cost. Breathing rate alone rises with heat and arousal without any change in
+// work, so it is the noisier half of the pair.
 const RESP_DECOUPLING_SCRIPT = `{
   let v = null
   try {
     let r = icu.streams.respiration
     let w = icu.streams.fixed_watts
-    if (r && w && r.length >= 2400 && w.length == r.length) {
+    ${TYMEWEAR_GATE}
+    if (tv && r && w && r.length >= 2400 && w.length == r.length && tv.length == r.length) {
       let n = r.length, h = n >> 1
-      let rs1 = 0, ws1 = 0, c1 = 0, rs2 = 0, ws2 = 0, c2 = 0
-      for (let i = 0; i < h; i++) if (r[i] != null && r[i] > 0 && w[i] != null) { rs1 += r[i]; ws1 += w[i]; c1++ }
-      for (let i = h; i < n; i++) if (r[i] != null && r[i] > 0 && w[i] != null) { rs2 += r[i]; ws2 += w[i]; c2++ }
-      if (c1 > 300 && c2 > 300 && rs1 > 0 && rs2 > 0) {
-        let ef1 = (ws1 / c1) / (rs1 / c1)
-        let ef2 = (ws2 / c2) / (rs2 / c2)
+      let es1 = 0, ws1 = 0, c1 = 0, es2 = 0, ws2 = 0, c2 = 0
+      for (let i = 0; i < h; i++) if (r[i] > 0 && tv[i] > 0 && w[i] != null) { es1 += r[i] * tv[i]; ws1 += w[i]; c1++ }
+      for (let i = h; i < n; i++) if (r[i] > 0 && tv[i] > 0 && w[i] != null) { es2 += r[i] * tv[i]; ws2 += w[i]; c2++ }
+      if (c1 > 300 && c2 > 300 && es1 > 0 && es2 > 0) {
+        let ef1 = ws1 / es1
+        let ef2 = ws2 / es2
         if (ef2 > 0) v = (ef1 / ef2 - 1) * 100
       }
+    }
+  } catch (e) {}
+  v
+}`;
+
+// Ventilatory efficiency: watts per unit of ventilation while riding steadily
+// in the endurance band (55–75% FTP on a 30 s rolling average), skipping the
+// first 10 minutes so warm-up and VE on-kinetics don't count. Lower = more air
+// for the same work, which on an easy ride means tired legs recruiting extra
+// (carb-burning, CO2-heavy) fibres — the fatigue signal readiness.ts reads.
+// Needs 20+ minutes in the band: below that the per-ride spread roughly
+// doubles (backtested on 2025-10..2026-09 rides). Scaled ×1000 into a
+// readable range; the strap's tidal-volume units are uncalibrated, so the
+// value is an index to compare against itself, not a physiological quantity.
+const VENT_EFF_SCRIPT = `{
+  let v = null
+  try {
+    let r = icu.streams.respiration
+    let w = icu.streams.fixed_watts
+    ${TYMEWEAR_GATE}
+    let ftp = icu.activity.icu_ftp
+    if (tv && r && w && ftp > 0 && w.length == r.length && tv.length == r.length) {
+      let lo = 0.55 * ftp, hi = 0.75 * ftp, roll = 0, ws = 0, es = 0, c = 0
+      for (let i = 0; i < w.length; i++) {
+        roll += w[i] || 0
+        if (i >= 30) roll -= w[i - 30] || 0
+        if (i < 600) continue
+        let p = roll / 30
+        if (p >= lo && p <= hi && w[i] != null && r[i] > 0 && tv[i] > 0) { ws += w[i]; es += r[i] * tv[i]; c++ }
+      }
+      if (c >= 1200 && es > 0) v = (ws / es) * 1000
     }
   } catch (e) {}
   v
@@ -301,6 +350,39 @@ export const CUSTOM_ITEM_DEFS: CustomItemDef[] = [
       ),
     ],
   ),
+  fitnessChart(
+    "venteff1",
+    "Ventilatory Efficiency (Rides)",
+    "Vent Efficiency per Tymewear ride with 28-day trend. A sustained drop at the same " +
+      "endurance power = accumulated fatigue. Strap scale shifted ~2026-07-30 — don't trend " +
+      "across that boundary.",
+    "W / VE",
+    [
+      plot(
+        1,
+        "VentEff",
+        "Vent Eff",
+        "Endurance-band watts per unit ventilation",
+        "efficiency",
+        "dot",
+        "rgba(23,190,207, 0.4)",
+        "rgb(23,190,207)",
+        "dec1",
+      ),
+      plot(
+        2,
+        "VentEff",
+        "28d avg",
+        "Vent Eff 28d moving avg",
+        "efficiency",
+        "line",
+        "rgba(23,190,207, 0.4)",
+        "rgb(15,130,145)",
+        "dec1",
+        { agg: "moving_avg", aggDays: 28 },
+      ),
+    ],
+  ),
   activityField(
     "TempDrift",
     "Temp Drift",
@@ -314,7 +396,8 @@ export const CUSTOM_ITEM_DEFS: CustomItemDef[] = [
     "RespDrift",
     "Resp Drift",
     "Respiration rate drift: 2nd-half avg vs 1st-half avg (%). Flat respiration + big HR " +
-      "decoupling = thermal/cardiovascular drift, not metabolic. Tymewear rides over 40 min only.",
+      "decoupling = thermal/cardiovascular drift, not metabolic. Tymewear rides over 40 min " +
+      "only (needs a live tidal_volume stream — the Edge's HR-derived breathing rate is ignored).",
     "%",
     "#334ccc",
     RESP_DRIFT_SCRIPT,
@@ -322,11 +405,23 @@ export const CUSTOM_ITEM_DEFS: CustomItemDef[] = [
   activityField(
     "RespDecoupling",
     "Resp Decoupling",
-    "Power:respiration decoupling, computed like power:HR decoupling but with breathing " +
-      "rate (%). Heat-independent aerobic durability signal. Tymewear rides over 40 min only.",
+    "Power:ventilation decoupling, computed like power:HR decoupling but with minute " +
+      "ventilation (breathing rate × tidal volume, %). Heat-independent aerobic durability " +
+      "signal. Tymewear rides over 40 min only. Values before 2026-10 used breathing rate alone.",
     "%",
     "#d62728",
     RESP_DECOUPLING_SCRIPT,
+  ),
+  activityField(
+    "VentEff",
+    "Vent Efficiency",
+    "Watts per unit of minute ventilation in the endurance band (55-75% FTP, after the first " +
+      "10 min; needs 20+ min there). Lower = more breathing for the same work — a fatigue " +
+      "signal the planner's readiness check reads. Index only (strap units are uncalibrated): " +
+      "the strap's scale shifted ~2026-07-30, so compare later rides against each other.",
+    "idx",
+    "#17becf",
+    VENT_EFF_SCRIPT,
   ),
 ];
 
