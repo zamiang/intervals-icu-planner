@@ -356,11 +356,32 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
 
   // Phase 1: sweet-spot (mid-week), unless very fatigued or the calendar
   // already holds one this week.
+  //
+  // A moderate week gets no Phase 2 hard day, so this is its only quality
+  // session. With a zone focus set (e.g. a VO2 block) that slot goes to the
+  // focus zone instead — otherwise every moderate week of a VO2 block would
+  // ride sweet spot and no VO2 at all, and with TSB hovering near zero most
+  // weeks read moderate. Fresh weeks keep both sessions; fatigued weeks keep
+  // the gentler sweet spot. A hard ride already on this week's calendar covers
+  // the interval side, so the slot stays sweet spot as before.
+  const moderateFocus =
+    intensity === "moderate" && existingHardRides === 0 ? hardZoneFocusOn(startDate, config) : null;
   let lcIdx: number | undefined;
   if (!veryFatigued && existingSweetSpots === 0) {
     const lcCandidates = available.filter((i) => isEmpty(i) && !wouldCreateBackToBack(i));
     lcIdx = lcCandidates.find((i) => i >= 2 && i <= 4) ?? lcCandidates[0];
-    if (lcIdx !== undefined) {
+    if (lcIdx !== undefined && moderateFocus) {
+      usedHardZones.add(moderateFocus);
+      plan[lcIdx].push({
+        date: dates[lcIdx],
+        type: "cycling",
+        name: `${zoneLabel(moderateFocus)} Intervals`,
+        description: buildCyclingDescription("hard", moderateFocus),
+        intensity: "hard",
+        targetZone: moderateFocus,
+        ...stepField,
+      });
+    } else if (lcIdx !== undefined) {
       plan[lcIdx].push({
         date: dates[lcIdx],
         type: "sweet_spot",
@@ -510,6 +531,17 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   return out;
 }
 
+// Longest an easy or long ride may run on `date`: scheduling.weekday_max_minutes
+// Mon-Fri (a work day can't fit a 3-hour ride), unlimited on the weekend or
+// when unset. Bare YYYY-MM-DD parses as UTC midnight, so getUTCDay is the
+// calendar weekday regardless of host timezone.
+function dayCapMinutes(date: string, config: Config): number {
+  const cap = config.scheduling.weekday_max_minutes;
+  if (cap == null) return Infinity;
+  const dow = new Date(date.slice(0, 10)).getUTCDay();
+  return dow === 0 || dow === 6 ? Infinity : cap;
+}
+
 // Spread `shortfallTss` of extra load across the week's standard easy rides —
 // never the long ride (its length is a durability choice, not a volume knob)
 // and never by adding intensity, so the 80/20 split holds. Each ride grows
@@ -529,7 +561,11 @@ function extendEasyRides(
   const tssPerMin = (lt.easy_if * lt.easy_if * 100) / 60;
   const perRide = Math.ceil(shortfallTss / tssPerMin / easy.length / 5) * 5;
   for (const w of easy) {
-    w.durationMin = Math.min(lt.easy_max_minutes, (w.durationMin ?? lt.easy_minutes) + perRide);
+    w.durationMin = Math.min(
+      lt.easy_max_minutes,
+      dayCapMinutes(w.date, config),
+      (w.durationMin ?? lt.easy_minutes) + perRide,
+    );
     w.load = Math.round((w.durationMin / 60) * lt.easy_if * lt.easy_if * 100);
   }
 }
@@ -566,11 +602,18 @@ function attachLoadTargets(
   };
 
   // Promote the last easy cycling ride to the weekly long ride, unless the
-  // calendar already holds one this week.
+  // calendar already holds one this week. Only a day whose cap fits the long
+  // ride qualifies, so with weekday_max_minutes set it lands on the weekend;
+  // a week with no such easy day gets no long ride rather than a capped one.
   let longIdx = -1;
   if (!hasExistingLongRide) {
     for (let i = 0; i < out.length; i++) {
-      if (out[i].type === "cycling" && out[i].intensity === "easy") longIdx = i;
+      if (
+        out[i].type === "cycling" &&
+        out[i].intensity === "easy" &&
+        dayCapMinutes(out[i].date, config) >= longMinutes
+      )
+        longIdx = i;
     }
   }
 
@@ -590,7 +633,9 @@ function attachLoadTargets(
     // cycling
     if (w.intensity === "easy") {
       const isLong = i === longIdx;
-      w.durationMin = isLong ? longMinutes : lt.easy_minutes;
+      w.durationMin = isLong
+        ? longMinutes
+        : Math.min(lt.easy_minutes, dayCapMinutes(w.date, config));
       w.intensityFactor = lt.easy_if;
       w.load = tss(w.durationMin, lt.easy_if);
       if (isLong) {
