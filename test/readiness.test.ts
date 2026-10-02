@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { computeReadiness, readinessLookbackDays } from "../src/readiness.js";
-import type { Config, WellnessEntry } from "../src/types.js";
+import {
+  computeReadiness,
+  readinessActivityLookbackDays,
+  readinessLookbackDays,
+} from "../src/readiness.js";
+import type { Activity, Config, WellnessEntry } from "../src/types.js";
 
 const READINESS_CONFIG: Config["readiness"] = {
   enabled: true,
@@ -15,6 +19,13 @@ const READINESS_CONFIG: Config["readiness"] = {
   step_lookback_days: 7,
   step_days_required: 4,
   min_step_samples: 5,
+  vent_enabled: true,
+  vent_recent_days: 7,
+  vent_baseline_days: 42,
+  vent_min_recent_rides: 2,
+  vent_min_baseline_rides: 5,
+  vent_drop_pct: 12,
+  vent_epoch_start: null,
 };
 
 // Minimal Config — computeReadiness only reads config.readiness.
@@ -364,5 +375,110 @@ describe("readinessLookbackDays", () => {
     // the fetch below what the step signal needs.
     const config = makeConfig({ baseline_days: 10, recent_days: 2, step_lookback_days: 14 });
     expect(readinessLookbackDays(config)).toBe(14);
+  });
+});
+
+// A ride `daysAgo` days before the newest wellness entry (2026-06-23, see
+// makeRange) carrying a VentEff value; null models a ride without the strap.
+function ride(daysAgo: number, ventEff: number | null): Activity {
+  const d = new Date(Date.UTC(2026, 5, 23) - daysAgo * 86_400_000).toISOString().slice(0, 10);
+  return {
+    id: `i${daysAgo}`,
+    start_date_local: `${d}T08:00:00`,
+    start_date: `${d}T12:00:00Z`,
+    type: "VirtualRide",
+    icu_training_load: 50,
+    icu_intensity: 0.65,
+    icu_zone_times: null,
+    icu_ss_time: null,
+    vent_eff: ventEff,
+  };
+}
+
+// Baseline rides 8-40 days back scattered around 25, the post-2026-07 norm.
+const VENT_BASELINE = [8, 12, 16, 20, 24, 28, 32].map((d, i) =>
+  ride(d, [25, 24, 26, 25, 23.5, 26.5, 25][i]),
+);
+
+describe("computeReadiness — ventilation", () => {
+  // Calm HRV/RHR and no steps, so whatever fires is ventilation alone.
+  const calmRange = () =>
+    makeRange({
+      baselineHrv: [55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 55, 65, 60, 60],
+      recentHrv: [60, 60, 60, 60],
+      baselineRhr: Array(16).fill(52),
+      recentRhr: [52, 52, 52, 52],
+    });
+
+  it("suppresses when endurance-ride ventilatory efficiency drops past the threshold", () => {
+    const acts = [...VENT_BASELINE, ride(1, 21.5), ride(3, 21.8)];
+    const r = computeReadiness(calmRange(), makeConfig(), acts);
+    expect(r.status).toBe("suppressed");
+    expect(r.ventDeltaPct).toBeCloseTo((21.65 / 25 - 1) * 100, 5);
+    expect(r.reason).toContain("ventilatory efficiency 13% below baseline");
+  });
+
+  it("stays normal for a drop inside ride-to-ride noise and reports the delta", () => {
+    const acts = [...VENT_BASELINE, ride(1, 23.5), ride(3, 24)];
+    const r = computeReadiness(calmRange(), makeConfig(), acts);
+    expect(r.status).toBe("normal");
+    expect(r.ventDeltaPct).toBeCloseTo(-5, 5);
+  });
+
+  it("won't act on a single bad ride in the recent window", () => {
+    const acts = [...VENT_BASELINE, ride(1, 15)];
+    const r = computeReadiness(calmRange(), makeConfig(), acts);
+    expect(r.status).toBe("normal");
+    expect(r.ventDeltaPct).toBeUndefined();
+  });
+
+  it("abstains when the baseline has too few strap rides", () => {
+    const acts = [ride(10, 25), ride(20, 25), ride(30, 25), ride(1, 18), ride(2, 18)];
+    expect(computeReadiness(calmRange(), makeConfig(), acts).ventDeltaPct).toBeUndefined();
+  });
+
+  it("ignores rides without a VentEff value (no strap, or too little time in the band)", () => {
+    const acts = [...VENT_BASELINE, ride(1, 21), ride(2, null), ride(3, null)];
+    expect(computeReadiness(calmRange(), makeConfig(), acts).ventDeltaPct).toBeUndefined();
+  });
+
+  it("drops baseline rides from before vent_epoch_start so two strap scales never mix", () => {
+    // Old-scale rides read ~40% higher; straddling the epoch they'd fake a drop.
+    const oldScale = [30, 34, 38, 42, 46].map((d) => ride(d, 35));
+    const acts = [
+      ...oldScale,
+      ...[8, 12, 16, 20, 24].map((d) => ride(d, 25)),
+      ride(1, 24),
+      ride(2, 24),
+    ];
+    expect(computeReadiness(calmRange(), makeConfig(), acts).status).toBe("suppressed");
+    const r = computeReadiness(calmRange(), makeConfig({ vent_epoch_start: "2026-05-27" }), acts);
+    expect(r.status).toBe("normal");
+    expect(r.ventDeltaPct).toBeCloseTo(-4, 5);
+  });
+
+  it("ignores ventilation entirely when vent_enabled is false", () => {
+    const acts = [...VENT_BASELINE, ride(1, 15), ride(2, 15)];
+    const r = computeReadiness(calmRange(), makeConfig({ vent_enabled: false }), acts);
+    expect(r.status).toBe("normal");
+    expect(r.ventDeltaPct).toBeUndefined();
+  });
+
+  it("is a verdict on its own with no HRV, resting-HR or step history", () => {
+    const range = makeRange({ steps: [null] });
+    const acts = [...VENT_BASELINE, ride(0, 20), ride(2, 20)];
+    expect(computeReadiness(range, makeConfig({ steps_enabled: false }), acts).status).toBe(
+      "suppressed",
+    );
+  });
+});
+
+describe("readinessActivityLookbackDays", () => {
+  it("covers the recent and baseline ride windows", () => {
+    expect(readinessActivityLookbackDays(makeConfig())).toBe(49);
+  });
+
+  it("needs no history when ventilation is disabled", () => {
+    expect(readinessActivityLookbackDays(makeConfig({ vent_enabled: false }))).toBe(0);
   });
 });

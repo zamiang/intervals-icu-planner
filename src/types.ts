@@ -77,6 +77,18 @@ export interface ReadinessConfig {
   step_lookback_days: number; // default 7 — trailing window (ending at the newest wellness entry) scanned for those days
   step_days_required: number; // default 4 — this many high-step days in the window ⇒ suppressed. Requiring several days is what makes this a *sustained* load signal rather than a reaction to one big walk.
   min_step_samples: number; // default 5 — need this many days carrying a step count in the lookback window or the step signal abstains (Intervals.icu leaves today's steps null until the source syncs, and drops the odd day entirely)
+  // Ventilatory efficiency (Tymewear): endurance-band watts per unit of minute
+  // ventilation, per ride (the `VentEff` custom field). Tired legs need more air
+  // for the same power, so a sustained drop flags fatigue that HRV can miss and
+  // TSB can't see. Like the other inputs it can only suppress, and it abstains
+  // without enough strap rides.
+  vent_enabled: boolean; // default true — when false, ventilation is ignored
+  vent_recent_days: number; // default 7 — trailing window (ending at the newest wellness entry) whose rides form "now"
+  vent_baseline_days: number; // default 42 — window before the recent one used as the baseline
+  vent_min_recent_rides: number; // default 2 — rides with a value needed in the recent window (one ride is too noisy to act on)
+  vent_min_baseline_rides: number; // default 5 — rides needed in the baseline or the signal abstains
+  vent_drop_pct: number; // default 12 — recent median ≥ this % below the baseline median ⇒ suppressed. Ride-to-ride spread is ~7%, so a 12% drop in a median of several rides is well outside noise.
+  vent_epoch_start: string | null; // default null — ignore rides before this date (YYYY-MM-DD). Set it whenever the strap's scale shifts (strap/module swap, firmware) so the baseline never mixes two scales.
 }
 
 // HOLIDAY-awareness: when a HOLIDAY calendar event overlaps the planning
@@ -192,6 +204,7 @@ export interface Activity {
   icu_zone_times: number[] | null; // seconds in Z1..Z7 (normalized from the API's object form on read)
   icu_ss_time: number | null; // seconds in the native sweet-spot ("SS") band; overlaps Z3/Z4, so not part of icu_zone_times
   icu_rolling_ftp?: number | null; // Intervals.icu's rolling eFTP estimate as of this activity; source for ftp_sync
+  vent_eff?: number | null; // the `VentEff` custom field (src/customItems.ts): endurance-band watts per unit Tymewear ventilation; null on rides without a usable strap stream. Source for the readiness ventilation signal.
 }
 
 // --- Scheduler ---

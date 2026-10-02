@@ -237,6 +237,8 @@ export class IntervalsClient {
         icu_ss_time: ssTime,
         icu_rolling_ftp:
           typeof a.icu_rolling_ftp === "number" && a.icu_rolling_ftp > 0 ? a.icu_rolling_ftp : null,
+        // Custom activity fields come back as top-level keys named by their code.
+        vent_eff: typeof a.VentEff === "number" && a.VentEff > 0 ? a.VentEff : null,
       };
     });
   }

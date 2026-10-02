@@ -3,7 +3,12 @@ loadEnv({ quiet: true });
 import { loadConfig } from "./config.js";
 import { IntervalsClient } from "./intervals.js";
 import { schedule, classifyFatigue, effectiveFatigue, rampGuardTriggered } from "./scheduler.js";
-import { computeReadiness, readinessLookbackDays, type ReadinessSignal } from "./readiness.js";
+import {
+  computeReadiness,
+  readinessActivityLookbackDays,
+  readinessLookbackDays,
+  type ReadinessSignal,
+} from "./readiness.js";
 import { todayLocal, addLocalDays } from "./dates.js";
 import { computeDistribution, POLARIZED_TARGETS, ZONES, zoneLabel } from "./zones.js";
 import { structuredWorkoutFor } from "./workout.js";
@@ -15,6 +20,7 @@ import { holidayDatesInWindow } from "./holidays.js";
 import { activeBlock, blockWeek, hardZoneFocusOn, projectCtl, windowTss } from "./blocks.js";
 import type { AthleteProfile } from "./intervals.js";
 import type {
+  Activity,
   Config,
   PlannedWorkout,
   IntervalsEvent,
@@ -136,6 +142,19 @@ function requireEnv(name: string): string {
   return val;
 }
 
+// Start of the activity fetch: the 28-day window the zone distribution, eFTP
+// and completed-day checks use, widened when the readiness ventilation signal
+// needs a longer ride history. One fetch serves both; `sinceDate` slices the
+// 28-day consumers back so their numbers don't change with the readiness config.
+function activityHistoryStart(today: string, lookbackStr: string, config: Config): string {
+  const ventStart = addLocalDays(today, -readinessActivityLookbackDays(config));
+  return ventStart < lookbackStr ? ventStart : lookbackStr;
+}
+
+function sinceDate(activities: Activity[], start: string): Activity[] {
+  return activities.filter((a) => a.start_date_local.slice(0, 10) >= start);
+}
+
 // One-line readiness summary for the status dashboard. "n/a" when there isn't
 // enough HRV/RHR/step history to judge, so the line is never silently misleading.
 export function formatReadiness(r: ReadinessSignal): string {
@@ -155,9 +174,13 @@ export function formatReadiness(r: ReadinessSignal): string {
       bits.push(`resting HR ${delta >= 0 ? "+" : ""}${delta} bpm`);
     }
     if (r.highStepDays !== undefined) bits.push(`${r.highStepDays} high-step days in window`);
+    if (r.ventDeltaPct !== undefined) {
+      const delta = Math.round(r.ventDeltaPct);
+      bits.push(`vent efficiency ${delta >= 0 ? "+" : ""}${delta}%`);
+    }
     return bits.length > 0 ? `normal (${bits.join(", ")})` : "normal";
   }
-  return "n/a (insufficient HRV/resting-HR/step history)";
+  return "n/a (insufficient HRV/resting-HR/step/ventilation history)";
 }
 
 export function formatPlan(workouts: PlannedWorkout[]): string {
@@ -397,17 +420,18 @@ async function main() {
     // the planner will act on; the ramp is still a trailing-7-day measure.
     const wellnessStr = addLocalDays(today, -readinessLookbackDays(config));
 
-    const [activities, wellnessRange, rideSettings] = await Promise.all([
-      intervals.getActivities(lookbackStr, today),
+    const [activityHistory, wellnessRange, rideSettings] = await Promise.all([
+      intervals.getActivities(activityHistoryStart(today, lookbackStr, config), today),
       intervals.getTrainingLoadRange(wellnessStr, today),
       intervals.getRideSportSettings(),
     ]);
+    const activities = sinceDate(activityHistory, lookbackStr);
     const ftp = rideSettings?.ftp ?? null;
     const eftp = latestEftp(activities);
     const load = latestTrainingLoad(wellnessRange, today);
     const distribution = computeDistribution(activities);
     const rampRatePct = computeWeeklyRampPct(wellnessRange.filter((e) => e.date >= weekAgoStr));
-    const readiness = computeReadiness(wellnessRange, config);
+    const readiness = computeReadiness(wellnessRange, config, activityHistory);
 
     if (json) {
       const deficits = Object.fromEntries(
@@ -474,7 +498,7 @@ async function main() {
 
   const [
     events,
-    activities,
+    activityHistory,
     wellnessRange,
     raceEvents,
     rideSettings,
@@ -482,7 +506,7 @@ async function main() {
     remoteAthlete,
   ] = await Promise.all([
     intervals.getEvents(eventLookbackStr, endStr),
-    intervals.getActivities(lookbackStr, today),
+    intervals.getActivities(activityHistoryStart(today, lookbackStr, config), today),
     intervals.getTrainingLoadRange(wellnessStr, today),
     intervals.getEvents(today, raceHorizonStr),
     intervals.getRideSportSettings(),
@@ -499,6 +523,7 @@ async function main() {
         })
       : Promise.resolve(null),
   ]);
+  const activities = sinceDate(activityHistory, lookbackStr);
   const athlete = mergeAthlete(localAthlete, remoteAthlete);
   const load = latestTrainingLoad(wellnessRange, today);
 
@@ -513,7 +538,7 @@ async function main() {
   // Ramp is a trailing-7-day measure, so slice the wider readiness window back
   // down — computeWeeklyRampPct compares the range's endpoints.
   const rampRatePct = computeWeeklyRampPct(wellnessRange.filter((e) => e.date >= weekAgoStr));
-  const readiness = computeReadiness(wellnessRange, config);
+  const readiness = computeReadiness(wellnessRange, config, activityHistory);
   // Activities already logged inside the planning window (typically today) lock
   // their day so the planner doesn't schedule on top of a completed session.
   const completedDates = [

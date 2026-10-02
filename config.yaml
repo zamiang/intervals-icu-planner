@@ -296,6 +296,16 @@ readiness:
   step_lookback_days: 7 # trailing window, ending at the newest wellness entry, scanned for those days
   step_days_required: 4 # this many high-step days in the window → suppressed. Several days is what makes it a *sustained* load signal rather than a reaction to one big walk
   min_step_samples: 5 # need this many days carrying a step count in the window or the step signal abstains (Intervals.icu leaves today's steps null until the source syncs)
+  # Ventilation (Tymewear). Each strap ride's `VentEff` custom field is watts per
+  # unit of ventilation in the endurance band; tired legs need more air for the
+  # same power. A sustained drop suppresses the week like an HRV drop — one tier.
+  vent_enabled: true # set false to ignore ventilation
+  vent_recent_days: 7 # trailing window whose rides form "now"
+  vent_baseline_days: 42 # window before that used as the baseline
+  vent_min_recent_rides: 2 # one ride is too noisy (~7% ride-to-ride spread) to act on
+  vent_min_baseline_rides: 5 # fewer strap rides in the baseline → the signal abstains
+  vent_drop_pct: 12 # recent median ≥ 12% below baseline → suppressed (backtest 2025-10..2026-09: fired 9 of 72 judgeable days)
+  vent_epoch_start: "2026-07-30" # strap scale shifted here (peak tidal volume ~600 → ~360); reset whenever the strap/module is swapped
 
 # Daily fuelling targets — "what should I eat today" — pushed as one NOTE per
 # planned day alongside the workouts. Numbers are derived from the sessions the

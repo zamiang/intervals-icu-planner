@@ -341,6 +341,25 @@ readiness:
     await expect(loadConfig(file)).rejects.toThrow("min_step_samples");
   });
 
+  it("accepts a vent_epoch_start date and rejects anything else", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(
+      file,
+      VALID_YAML + `\nreadiness:\n  vent_epoch_start: "2026-07-30"\n`,
+      "utf8",
+    );
+    expect((await loadConfig(file)).readiness.vent_epoch_start).toBe("2026-07-30");
+
+    await fs.writeFile(file, VALID_YAML + `\nreadiness:\n  vent_epoch_start: "July 30"\n`, "utf8");
+    await expect(loadConfig(file)).rejects.toThrow("vent_epoch_start");
+  });
+
+  it("throws when vent_drop_pct is not a number", async () => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(file, VALID_YAML + `\nreadiness:\n  vent_drop_pct: "12%"\n`, "utf8");
+    await expect(loadConfig(file)).rejects.toThrow("vent_drop_pct");
+  });
+
   it("throws when steps_enabled is not a boolean", async () => {
     const yaml =
       VALID_YAML +
