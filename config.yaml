@@ -165,8 +165,9 @@ sweet_spot:
     Easy Zone 1 spin at a comfortable cadence.
 
     Progression
-    When 3 x 12 min feels sustainable, extend to 3 x 15 min, then 2 x 20 min,
-    then nudge the target toward 95% FTP. Wattage targets track your
+    Inside a block with `progression: true` the planner climbs this itself,
+    one step every two weeks: 3 x 12 min, then 3 x 15, then 2 x 20, then 2 x 20
+    at 90-95% FTP. Wattage targets track your
     Intervals.icu eFTP automatically (see ftp_sync below) — a formal re-test
     every couple of months keeps the estimate honest.
 
@@ -211,6 +212,11 @@ scheduling:
 # the focus while its dates are live (inclusive), then lets go by itself. Keys
 # a block omits fall back to the top-level settings. Blocks must not overlap.
 #   hard_zone_focus — overrides scheduling.hard_zone_focus (null = deficit pick)
+#   progression     — true climbs the sweet-spot / interval ladders
+#                     (src/workout.ts) and grows the long ride +15 min, one
+#                     step every two block weeks; a back-off week repeats the
+#                     previous step. Capped at the top rung and
+#                     load_targets.long_max_minutes.
 #   ctl_floor       — minimum CTL to defend. When the planned week would end
 #                     below it, easy rides lengthen (up to
 #                     load_targets.easy_max_minutes) — never harder, never on a
@@ -228,6 +234,8 @@ blocks:
     start_date: "2026-09-19"
     end_date: "2026-11-22"
     hard_zone_focus: vo2
+    # VO2 5x3 -> 6x3 -> 5x4 -> 6x4 -> 5x5; sweet spot 3x12 -> 3x15 -> 2x20.
+    progression: true
   # Last winter CTL fell 66 -> 33 (Nov 2025 -> Mar 2026) and eFTP 234 -> 222,
   # and spring was spent rebuilding it. The floor defends roughly the level the
   # cut exits at, so spring 2027 starts from there instead of from scratch.
@@ -236,6 +244,7 @@ blocks:
     start_date: "2026-12-07"
     end_date: "2027-02-28"
     ctl_floor: 48
+    progression: true
 
 # Planned-load targets the planner attaches to each generated workout, so the
 # calendar shows TSS/duration/IF and Intervals.icu folds them into planned CTL.
@@ -246,7 +255,8 @@ load_targets:
   easy_if: 0.62 # easy Zone 2 intensity factor (watts render from live FTP at push time)
   easy_minutes: 75 # standard easy ride duration → ~48 TSS
   easy_max_minutes: 120 # ceiling a block's ctl_floor may stretch an easy ride to → ~77 TSS
-  long_minutes: 180 # weekly long endurance ride → ~127 TSS (build this up over a block)
+  long_minutes: 180 # weekly long endurance ride → ~115 TSS
+  long_max_minutes: 210 # a progressing block grows the long ride +15 min/step up to this
   # Sweet-spot and zoned interval days are sized from their structured steps
   # (src/workout.ts) — e.g. 5x3 VO2 = 52 min @ ~0.87 → ~66 TSS. These two only
   # apply to an unzoned "Hard Ride" (only when a week has more hard days than

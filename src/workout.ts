@@ -108,11 +108,66 @@ export function easyEnduranceWorkout(minutes: number, ftpPct: number): Structure
   };
 }
 
+// Main-set ladders. A block with `progression: true` climbs one rung every two
+// weeks (src/blocks.ts progressionStep); outside one, rung 0 is the session.
+// Each rung adds work time — progressive overload — and the last rung holds.
+// Rungs keep the work band fixed until the volume has grown, then nudge it.
+interface MainSet {
+  reps: number;
+  onMin: number;
+  lo: number; // % FTP
+  hi: number;
+  offMin: number;
+}
+
+// 36 → 45 → 40 min longer reps → 40 at the top of the band, the sequence the
+// sweet_spot rationale in config.yaml describes.
+export const SWEET_SPOT_LADDER: readonly MainSet[] = [
+  { reps: 3, onMin: 12, lo: 88, hi: 94, offMin: 5 },
+  { reps: 3, onMin: 15, lo: 88, hi: 94, offMin: 5 },
+  { reps: 2, onMin: 20, lo: 88, hi: 94, offMin: 5 },
+  { reps: 2, onMin: 20, lo: 90, hi: 95, offMin: 5 },
+];
+
+// Work-interval ladders per hard zone. VO2 climbs from 15 to 25 min of work
+// (studies that move VO2max typically accumulate 16-24 min); reps of 4-5 min
+// drop the band slightly so the last rep is still completable.
+export const INTERVAL_LADDERS: Record<"threshold" | "vo2" | "anaerobic", readonly MainSet[]> = {
+  threshold: [
+    { reps: 4, onMin: 8, lo: 95, hi: 102, offMin: 4 },
+    { reps: 3, onMin: 12, lo: 95, hi: 102, offMin: 4 },
+    { reps: 4, onMin: 10, lo: 95, hi: 102, offMin: 4 },
+    { reps: 2, onMin: 20, lo: 95, hi: 100, offMin: 5 },
+    { reps: 3, onMin: 15, lo: 95, hi: 100, offMin: 5 },
+  ],
+  vo2: [
+    { reps: 5, onMin: 3, lo: 110, hi: 118, offMin: 3 },
+    { reps: 6, onMin: 3, lo: 110, hi: 118, offMin: 3 },
+    { reps: 5, onMin: 4, lo: 106, hi: 115, offMin: 3 },
+    { reps: 6, onMin: 4, lo: 106, hi: 115, offMin: 3 },
+    { reps: 5, onMin: 5, lo: 105, hi: 112, offMin: 3 },
+  ],
+  anaerobic: [
+    { reps: 8, onMin: 1, lo: 125, hi: 140, offMin: 2 },
+    { reps: 10, onMin: 1, lo: 125, hi: 140, offMin: 2 },
+    { reps: 12, onMin: 1, lo: 125, hi: 140, offMin: 2 },
+  ],
+};
+
+// The rung for `step`, holding at the top of the ladder (and at the bottom for
+// a negative or fractional step).
+export function rung(ladder: readonly MainSet[], step = 0): MainSet {
+  const i = Math.min(ladder.length - 1, Math.max(0, Math.floor(step)));
+  return ladder[i];
+}
+
 // The weekly sweet-spot session, paced by power off stored FTP: an easy warmup
-// with threshold openers, 3x12 min at 88-94% FTP, and an easy cooldown. The
-// full coaching rationale lives in config.yaml / docs; the event carries the
-// executable structure plus short per-step labels.
-export function sweetSpotWorkout(): StructuredWorkout {
+// with threshold openers, the main set for this progression step (3x12 min at
+// 88-94% FTP at rung 0), and an easy cooldown. The full coaching rationale
+// lives in config.yaml / docs; the event carries the executable structure plus
+// short per-step labels.
+export function sweetSpotWorkout(step = 0): StructuredWorkout {
+  const m = rung(SWEET_SPOT_LADDER, step);
   return renderSteps([
     {
       title: "Warmup",
@@ -129,13 +184,17 @@ export function sweetSpotWorkout(): StructuredWorkout {
     },
     {
       title: "Main Set",
-      reps: 3,
+      reps: m.reps,
       steps: [
-        { min: 12, lo: 88, hi: 94, label: "Sweet spot" },
-        { min: 5, lo: 50, hi: 55, label: "Easy recovery spin" },
+        { min: m.onMin, lo: m.lo, hi: m.hi, label: "Sweet spot" },
+        { min: m.offMin, lo: 50, hi: 55, label: "Easy recovery spin" },
       ],
     },
-    { title: "Cooldown", reps: 1, steps: [{ min: 8, lo: 45, hi: 55, label: "Easy Zone 1 spin" }] },
+    {
+      title: "Cooldown",
+      reps: 1,
+      steps: [{ min: 8, lo: 45, hi: 55, label: "Easy Zone 1 spin" }],
+    },
   ]);
 }
 
@@ -144,13 +203,8 @@ export function sweetSpotWorkout(): StructuredWorkout {
 // FTP so Intervals.icu renders per-interval target watts and pushes them to the
 // Companion app. This is what makes a hard day self-constructed rather than
 // dependent on an external workout-of-the-day.
-interface IntervalSpec {
+interface IntervalSpec extends MainSet {
   label: string; // step label + shown in the calendar
-  reps: number; // number of work intervals
-  onMin: number; // work-interval length, minutes
-  lo: number; // work-interval power band, % FTP
-  hi: number;
-  offMin: number; // recovery length between intervals, minutes
 }
 
 function intervalSession(s: IntervalSpec): StructuredWorkout {
@@ -180,7 +234,7 @@ function intervalSession(s: IntervalSpec): StructuredWorkout {
   ]);
 }
 
-export function hardIntervalWorkout(zone: Zone): StructuredWorkout {
+export function hardIntervalWorkout(zone: Zone, step = 0): StructuredWorkout {
   // Exhaustive over Zone (no `default`) so adding a zone is a compile error here
   // rather than a silent fallback to the wrong session. The scheduler only ever
   // targets threshold / vo2 / anaerobic on hard-cycling days (sweet_spot is
@@ -188,38 +242,31 @@ export function hardIntervalWorkout(zone: Zone): StructuredWorkout {
   // any caller stays correct.
   switch (zone) {
     case "threshold":
-      return intervalSession({ label: "Threshold", reps: 4, onMin: 8, lo: 95, hi: 102, offMin: 4 });
+      return intervalSession({ label: "Threshold", ...rung(INTERVAL_LADDERS.threshold, step) });
     case "vo2":
-      return intervalSession({ label: "VO2 Max", reps: 5, onMin: 3, lo: 110, hi: 118, offMin: 3 });
+      return intervalSession({ label: "VO2 Max", ...rung(INTERVAL_LADDERS.vo2, step) });
     case "anaerobic":
-      return intervalSession({
-        label: "Anaerobic",
-        reps: 8,
-        onMin: 1,
-        lo: 125,
-        hi: 140,
-        offMin: 2,
-      });
+      return intervalSession({ label: "Anaerobic", ...rung(INTERVAL_LADDERS.anaerobic, step) });
     // A legitimately different structured session (3x12 min @ 88-94%), not a
     // short-interval format — its own case, not a shared fallback.
     case "sweet_spot":
-      return sweetSpotWorkout();
+      return sweetSpotWorkout(step);
     // Not hard-day zones (see HARD_ZONES) and unreachable from the scheduler,
     // but the type permits them; a steady sweet-spot session is the safe map.
     case "endurance":
     case "tempo":
-      return sweetSpotWorkout();
+      return sweetSpotWorkout(step);
   }
 }
 
 // Map a scheduler-planned workout to a structured workout, when one can be
 // generated deterministically. Hard cycling days build the interval session for
-// their target zone; weights (no power/HR model) and rest days return null and
+// their target zone, at the progression step the scheduler stamped on them; weights (no power/HR model) and rest days return null and
 // keep their prose descriptions.
 export function structuredWorkoutFor(w: PlannedWorkout): StructuredWorkout | null {
-  if (w.type === "sweet_spot") return sweetSpotWorkout();
+  if (w.type === "sweet_spot") return sweetSpotWorkout(w.progressionStep);
   if (w.type === "cycling" && w.intensity === "hard" && w.targetZone) {
-    return hardIntervalWorkout(w.targetZone);
+    return hardIntervalWorkout(w.targetZone, w.progressionStep);
   }
   if (
     w.type === "cycling" &&

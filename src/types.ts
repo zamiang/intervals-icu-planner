@@ -34,6 +34,7 @@ export interface LoadTargetsConfig {
   easy_minutes: number; // default 75 — duration of a standard easy ride
   easy_max_minutes: number; // default 120 — ceiling a block's CTL floor may stretch an easy ride to
   long_minutes: number; // default 180 — the one weekly long endurance ride (century durability)
+  long_max_minutes: number; // default = long_minutes — ceiling a progressing block may grow the long ride to (+15 min per step)
   hard_if: number; // default 0.88 — IF for an unzoned "Hard Ride" (zoned days are sized from their structured session)
   hard_minutes: number; // default 75 — duration of an unzoned "Hard Ride"
 }
@@ -47,6 +48,7 @@ export interface TrainingBlock {
   end_date: string; // YYYY-MM-DD, inclusive
   hard_zone_focus?: HardZone | null; // overrides scheduling.hard_zone_focus; null = deficit pick for this block
   ctl_floor?: number; // minimum CTL to defend: easy rides lengthen when the planned week would end below it
+  progression?: boolean; // climb the quality-session ladders and long ride one step every two block weeks
 }
 
 export interface PeriodizationConfig {
@@ -221,6 +223,7 @@ export interface PlannedWorkout {
   description: string;
   intensity: CyclingIntensity | "hard"; // weights and sweet_spot are always "hard"
   targetZone?: Zone; // set on hard cycling days when zone distribution is supplied
+  progressionStep?: number; // ladder rung for sweet-spot / interval sessions (src/workout.ts); absent ⇒ rung 0
   // Planned-load targets, attached by the scheduler and pushed to Intervals.icu.
   load?: number; // planned TSS (icu_training_load)
   durationMin?: number; // planned duration in minutes (pushed as moving_time seconds)

@@ -41,6 +41,7 @@ const LOAD_TARGETS_DEFAULTS: LoadTargetsConfig = {
   easy_minutes: 75,
   easy_max_minutes: 120,
   long_minutes: 180,
+  long_max_minutes: 180, // overridden below: an omitted ceiling tracks long_minutes (no growth)
   hard_if: 0.88,
   hard_minutes: 75,
 };
@@ -150,6 +151,7 @@ function validateLoadTargets(raw: unknown): Partial<LoadTargetsConfig> {
     "easy_minutes",
     "easy_max_minutes",
     "long_minutes",
+    "long_max_minutes",
     "hard_if",
     "hard_minutes",
   ];
@@ -431,6 +433,12 @@ function validateBlocks(raw: unknown): TrainingBlock[] {
       }
       block.hard_zone_focus = v as HardZone | null;
     }
+    if (obj.progression !== undefined) {
+      if (typeof obj.progression !== "boolean") {
+        throw new Error(`${where}.progression must be true or false`);
+      }
+      block.progression = obj.progression;
+    }
     if (obj.ctl_floor !== undefined) {
       if (typeof obj.ctl_floor !== "number" || obj.ctl_floor <= 0) {
         throw new Error(`${where}.ctl_floor must be a positive number`);
@@ -498,10 +506,12 @@ export async function loadConfig(filePath: string): Promise<Config> {
     ...validateScheduling(doc.scheduling),
   };
 
+  const parsedLoadTargets = validateLoadTargets(doc.load_targets);
   const load_targets: LoadTargetsConfig = {
     ...LOAD_TARGETS_DEFAULTS,
-    ...validateLoadTargets(doc.load_targets),
+    ...parsedLoadTargets,
   };
+  load_targets.long_max_minutes = parsedLoadTargets.long_max_minutes ?? load_targets.long_minutes;
 
   const periodization: PeriodizationConfig = {
     ...PERIODIZATION_DEFAULTS,
@@ -560,6 +570,12 @@ export async function loadConfig(filePath: string): Promise<Config> {
     );
   }
 
+  if (load_targets.long_max_minutes < load_targets.long_minutes) {
+    throw new Error(
+      `load_targets.long_max_minutes (${load_targets.long_max_minutes}) must not be below ` +
+        `long_minutes (${load_targets.long_minutes})`,
+    );
+  }
   if (load_targets.easy_max_minutes < load_targets.easy_minutes) {
     throw new Error(
       `load_targets.easy_max_minutes (${load_targets.easy_max_minutes}) must not be below ` +

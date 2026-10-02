@@ -74,6 +74,7 @@ const BASE_CONFIG: Config = {
     easy_minutes: 75,
     easy_max_minutes: 120,
     long_minutes: 180,
+    long_max_minutes: 180,
     hard_if: 0.88,
     hard_minutes: 75,
   },
@@ -1536,5 +1537,53 @@ describe("season blocks", () => {
       );
       expect(floored).toEqual(plain);
     });
+  });
+});
+
+describe("block progression", () => {
+  // makeInput plans the week starting 2026-04-20: week 3 of a block from 4/1 → step 1.
+  const freshLoad = { ctl: 50, atl: 40, tsb: 10 };
+  const cfg = (progression: boolean, longMax = 210): Config => ({
+    ...BASE_CONFIG,
+    scheduling: { ...BASE_CONFIG.scheduling, hard_zone_focus: "vo2" },
+    load_targets: { ...BASE_CONFIG.load_targets, long_max_minutes: longMax },
+    blocks: [{ name: "B", start_date: "2026-04-01", end_date: "2026-05-31", progression }],
+  });
+
+  it("stamps the step on quality sessions and sizes them from that rung", () => {
+    const result = schedule(makeInput({ trainingLoad: freshLoad, config: cfg(true) }));
+    const ss = result.find((w) => w.type === "sweet_spot")!;
+    const vo2 = result.find((w) => w.targetZone === "vo2")!;
+    expect(ss.progressionStep).toBe(1);
+    expect(vo2.progressionStep).toBe(1);
+    // 3x15 sweet spot: 10 + 3 + 3x(15+5) + 8 = 81 min; 6x3 VO2: 12 + 2 + 6x6 + 8 = 58
+    expect(ss.durationMin).toBe(81);
+    expect(vo2.durationMin).toBe(58);
+    expect(workoutToEvent(vo2).description).toContain("Main Set 6x");
+  });
+
+  it("grows the long ride with the step, capped at long_max_minutes", () => {
+    const long = (c: Config) =>
+      schedule(makeInput({ trainingLoad: freshLoad, config: c })).find(
+        (w) => w.name === "Long Endurance Ride",
+      )!;
+    expect(long(cfg(true)).durationMin).toBe(195);
+    expect(long(cfg(true, 180)).durationMin).toBe(180);
+    expect(long(cfg(false)).durationMin).toBe(180);
+  });
+
+  it("holds the previous rung on a back-off week", () => {
+    const suppressed: ReadinessSignal = { status: "suppressed", reason: "test" };
+    const result = schedule(
+      makeInput({ trainingLoad: freshLoad, config: cfg(true), readiness: suppressed }),
+    );
+    const ss = result.find((w) => w.type === "sweet_spot")!;
+    expect(ss.progressionStep).toBeUndefined();
+    expect(ss.durationMin).toBe(72);
+  });
+
+  it("leaves sessions at rung 0 in a block without progression", () => {
+    const result = schedule(makeInput({ trainingLoad: freshLoad, config: cfg(false) }));
+    expect(result.some((w) => w.progressionStep !== undefined)).toBe(false);
   });
 });

@@ -17,7 +17,14 @@ import { ageOn, fuelNoteEvents, latestWeightKg } from "./fueling.js";
 import type { Sex } from "./fueling.js";
 import { ATHLETE_FILE, isCompleteProfile, loadLocalAthlete, mergeAthlete } from "./athlete.js";
 import { holidayDatesInWindow } from "./holidays.js";
-import { activeBlock, blockWeek, hardZoneFocusOn, projectCtl, windowTss } from "./blocks.js";
+import {
+  activeBlock,
+  blockWeek,
+  hardZoneFocusOn,
+  progressionStep,
+  projectCtl,
+  windowTss,
+} from "./blocks.js";
 import type { AthleteProfile } from "./intervals.js";
 import type {
   Activity,
@@ -125,6 +132,8 @@ export function formatBlock(today: string, config: Config, ctl: number, weekTss?
   const parts = [`${block.name} (week ${week} of ${of}, ends ${block.end_date})`];
   const focus = hardZoneFocusOn(today, config);
   if (focus) parts.push(`${zoneLabel(focus)} focus`);
+  // The calendar step, before any back-off week drops it by one.
+  if (block.progression) parts.push(`progression step ${progressionStep(today, config)}`);
   if (block.ctl_floor !== undefined) {
     const now = `CTL ${ctl.toFixed(1)} vs floor ${block.ctl_floor}`;
     parts.push(

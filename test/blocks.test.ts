@@ -7,6 +7,8 @@ import {
   blockWeek,
   CTL_WEEK_RESPONSE,
   floorTargetTss,
+  longRideMinutes,
+  progressionStep,
   projectCtl,
   windowTss,
 } from "../src/blocks.js";
@@ -106,6 +108,13 @@ describe("formatBlock", () => {
   it("shows the floor and the projection when given the week's load", () => {
     expect(formatBlock("2026-12-07", cfg, 47, 350)).toBe(
       "Winter base (week 1 of 12, ends 2027-02-28) — CTL 47.0 vs floor 48, 47.5 projected after this week",
+    );
+  });
+
+  it("shows the progression step on a progressing block", () => {
+    const prog = { ...cfg, blocks: [{ ...AUTUMN, progression: true }] } as Config;
+    expect(formatBlock("2026-10-05", prog, 45)).toBe(
+      "Autumn VO2 (week 3 of 10, ends 2026-11-22) — VO2 Max focus — progression step 1",
     );
   });
 
@@ -219,6 +228,30 @@ blocks:
     );
   });
 
+  it("parses progression and defaults the long-ride ceiling to long_minutes", async () => {
+    const cfg = await load(`
+load_targets: { long_minutes: 150 }
+blocks:
+  - { name: "A", start_date: "2026-01-01", end_date: "2026-01-31", progression: true }
+`);
+    expect(cfg.blocks![0].progression).toBe(true);
+    expect(cfg.load_targets.long_max_minutes).toBe(150);
+  });
+
+  it("rejects a non-boolean progression", async () => {
+    await expect(
+      load(`blocks:
+  - { name: "A", start_date: "2026-01-01", end_date: "2026-01-31", progression: "yes" }
+`),
+    ).rejects.toThrow(/progression/);
+  });
+
+  it("rejects a long-ride ceiling below long_minutes", async () => {
+    await expect(
+      load("load_targets: { long_minutes: 180, long_max_minutes: 150 }\n"),
+    ).rejects.toThrow(/long_max_minutes/);
+  });
+
   it("rejects an easy ceiling below the standard easy ride", async () => {
     await expect(
       load("load_targets: { easy_minutes: 90, easy_max_minutes: 60 }\n"),
@@ -228,5 +261,41 @@ blocks:
   it("loads the repo's own config.yaml", async () => {
     const cfg = await loadConfig("config.yaml");
     expect(cfg.blocks!.length).toBeGreaterThan(0);
+  });
+});
+
+describe("progressionStep / longRideMinutes", () => {
+  const cfg = (blocks: TrainingBlock[], longMax = 210): Config =>
+    ({
+      blocks,
+      load_targets: { long_minutes: 180, long_max_minutes: longMax },
+    }) as unknown as Config;
+  const PROG = { ...AUTUMN, progression: true };
+
+  it("climbs one step every two block weeks", () => {
+    const c = cfg([PROG]);
+    expect(progressionStep("2026-09-19", c)).toBe(0); // week 1
+    expect(progressionStep("2026-09-28", c)).toBe(0); // week 2
+    expect(progressionStep("2026-10-03", c)).toBe(1); // week 3
+    expect(progressionStep("2026-10-17", c)).toBe(2); // week 5
+    expect(progressionStep("2026-11-21", c)).toBe(4); // week 10
+  });
+
+  it("is 0 outside a block and in a block without progression", () => {
+    expect(progressionStep("2026-10-17", cfg([AUTUMN]))).toBe(0);
+    expect(progressionStep("2026-12-01", cfg([PROG]))).toBe(0);
+  });
+
+  it("drops one step on a back-off week, never below 0", () => {
+    const c = cfg([PROG]);
+    expect(progressionStep("2026-10-17", c, true)).toBe(1);
+    expect(progressionStep("2026-09-19", c, true)).toBe(0);
+  });
+
+  it("grows the long ride 15 min per step up to the ceiling", () => {
+    expect(longRideMinutes(0, cfg([]))).toBe(180);
+    expect(longRideMinutes(1, cfg([]))).toBe(195);
+    expect(longRideMinutes(4, cfg([]))).toBe(210);
+    expect(longRideMinutes(4, cfg([], 180))).toBe(180); // default ceiling: no growth
   });
 });
