@@ -19,11 +19,67 @@ import type { Zone } from "./zones.js";
 export interface StructuredWorkout {
   text: string; // plain-text workout for the event description
   minutes: number; // total step duration, so callers can keep planned load consistent
-  // The effective IF the steps encode, when the workout is a single steady
-  // effort (e.g. endurance). Callers compute planned load from this so the
-  // submitted TSS matches the integer power % actually written into the step.
-  // Omitted for mixed workouts (e.g. sweet spot) whose IF varies across steps.
-  intensityFactor?: number;
+  // The IF the steps encode, so callers compute planned load (and fuelling)
+  // from the session the athlete will actually ride rather than a config
+  // constant. Exact for a single steady effort (endurance: the integer power %
+  // written into the step); estimated for mixed sessions as normalized power
+  // over the band midpoints (see estimateIntensityFactor).
+  intensityFactor: number;
+}
+
+// One step of a structured workout: a duration and a `% FTP` power band.
+interface Step {
+  min: number;
+  lo: number; // % FTP
+  hi: number; // % FTP
+  label: string; // step label, plus any cadence cue placed before it
+}
+
+// A titled group of steps, repeated `reps` times (Intervals.icu's "Main Set 3x").
+interface StepGroup {
+  title: string;
+  reps: number;
+  steps: Step[];
+}
+
+// Normalized power over the steps, each held at its band midpoint, as a
+// fraction of FTP. NP weights hard efforts by the 4th power, which is what
+// makes a 3x12 sweet-spot ride (~0.80) read easier than its 88-94% main set
+// and a short 5x3 VO2 ride (~0.87) read harder than its average power.
+// Ignoring NP's 30-s smoothing over step edges is a negligible error at these
+// step lengths. Rounded to two places; Intervals.icu's own NP from the steps
+// can differ by a point or so of TSS, which is noise for planning.
+export function estimateIntensityFactor(groups: StepGroup[]): number {
+  let minutes = 0;
+  let weighted = 0;
+  for (const g of groups) {
+    for (const st of g.steps) {
+      const mid = (st.lo + st.hi) / 200;
+      minutes += g.reps * st.min;
+      weighted += g.reps * st.min * mid ** 4;
+    }
+  }
+  return minutes > 0 ? Math.round((weighted / minutes) ** 0.25 * 100) / 100 : 0;
+}
+
+function fmtDuration(min: number): string {
+  return min < 1 ? `${Math.round(min * 60)}s` : `${min}m`;
+}
+
+function renderSteps(groups: StepGroup[]): StructuredWorkout {
+  const text = groups
+    .map((g) =>
+      [
+        g.reps > 1 ? `${g.title} ${g.reps}x` : g.title,
+        ...g.steps.map((st) => `- ${fmtDuration(st.min)} ${st.lo}-${st.hi}% ${st.label}`),
+      ].join("\n"),
+    )
+    .join("\n\n");
+  const minutes = groups.reduce(
+    (sum, g) => sum + g.reps * g.steps.reduce((s, st) => s + st.min, 0),
+    0,
+  );
+  return { text, minutes, intensityFactor: estimateIntensityFactor(groups) };
 }
 
 // A steady Zone 2 endurance ride carrying BOTH a power target and an HR-zone
@@ -57,61 +113,71 @@ export function easyEnduranceWorkout(minutes: number, ftpPct: number): Structure
 // full coaching rationale lives in config.yaml / docs; the event carries the
 // executable structure plus short per-step labels.
 export function sweetSpotWorkout(): StructuredWorkout {
-  const text = [
-    "Warmup",
-    "- 10m 55-70% 90rpm Easy Zone 2 spin",
-    "",
-    "Openers 3x",
-    "- 30s 95-100% 95rpm Threshold opener",
-    "- 30s 50-55% Easy spin",
-    "",
-    "Main Set 3x",
-    "- 12m 88-94% Sweet spot",
-    "- 5m 50-55% Easy recovery spin",
-    "",
-    "Cooldown",
-    "- 8m 45-55% Easy Zone 1 spin",
-  ].join("\n");
-  // 10 warmup + 3x(0.5+0.5) openers + 3x(12+5) main + 8 cooldown
-  const minutes = 10 + 3 * (0.5 + 0.5) + 3 * (12 + 5) + 8;
-  return { text, minutes };
+  return renderSteps([
+    {
+      title: "Warmup",
+      reps: 1,
+      steps: [{ min: 10, lo: 55, hi: 70, label: "90rpm Easy Zone 2 spin" }],
+    },
+    {
+      title: "Openers",
+      reps: 3,
+      steps: [
+        { min: 0.5, lo: 95, hi: 100, label: "95rpm Threshold opener" },
+        { min: 0.5, lo: 50, hi: 55, label: "Easy spin" },
+      ],
+    },
+    {
+      title: "Main Set",
+      reps: 3,
+      steps: [
+        { min: 12, lo: 88, hi: 94, label: "Sweet spot" },
+        { min: 5, lo: 50, hi: 55, label: "Easy recovery spin" },
+      ],
+    },
+    { title: "Cooldown", reps: 1, steps: [{ min: 8, lo: 45, hi: 55, label: "Easy Zone 1 spin" }] },
+  ]);
 }
 
 // A hard interval session, one per zone the scheduler targets. Each is a
 // classic prescription for its energy system, written as power steps off stored
 // FTP so Intervals.icu renders per-interval target watts and pushes them to the
 // Companion app. This is what makes a hard day self-constructed rather than
-// dependent on an external workout-of-the-day. These are mixed-IF workouts (no
-// single intensityFactor), so planned load is computed from the scheduler's
-// attached load_targets.hard_if over the structured duration, exactly as the
-// sweet-spot session already is.
+// dependent on an external workout-of-the-day.
 interface IntervalSpec {
   label: string; // step label + shown in the calendar
   reps: number; // number of work intervals
   onMin: number; // work-interval length, minutes
-  power: string; // work-interval power band as `% FTP`, e.g. "110-118%"
+  lo: number; // work-interval power band, % FTP
+  hi: number;
   offMin: number; // recovery length between intervals, minutes
 }
 
 function intervalSession(s: IntervalSpec): StructuredWorkout {
-  const text = [
-    "Warmup",
-    "- 12m 55-70% 90rpm Easy Zone 2 spin",
-    "",
-    "Openers 2x",
-    "- 30s 100-105% 95rpm Threshold opener",
-    "- 30s 50-55% Easy spin",
-    "",
-    `Main Set ${s.reps}x`,
-    `- ${s.onMin}m ${s.power} ${s.label}`,
-    `- ${s.offMin}m 50-55% Easy recovery spin`,
-    "",
-    "Cooldown",
-    "- 8m 45-55% Easy Zone 1 spin",
-  ].join("\n");
-  // 12 warmup + 2x(0.5+0.5) openers + reps x(on+off) main + 8 cooldown
-  const minutes = 12 + 2 * (0.5 + 0.5) + s.reps * (s.onMin + s.offMin) + 8;
-  return { text, minutes };
+  return renderSteps([
+    {
+      title: "Warmup",
+      reps: 1,
+      steps: [{ min: 12, lo: 55, hi: 70, label: "90rpm Easy Zone 2 spin" }],
+    },
+    {
+      title: "Openers",
+      reps: 2,
+      steps: [
+        { min: 0.5, lo: 100, hi: 105, label: "95rpm Threshold opener" },
+        { min: 0.5, lo: 50, hi: 55, label: "Easy spin" },
+      ],
+    },
+    {
+      title: "Main Set",
+      reps: s.reps,
+      steps: [
+        { min: s.onMin, lo: s.lo, hi: s.hi, label: s.label },
+        { min: s.offMin, lo: 50, hi: 55, label: "Easy recovery spin" },
+      ],
+    },
+    { title: "Cooldown", reps: 1, steps: [{ min: 8, lo: 45, hi: 55, label: "Easy Zone 1 spin" }] },
+  ]);
 }
 
 export function hardIntervalWorkout(zone: Zone): StructuredWorkout {
@@ -122,21 +188,16 @@ export function hardIntervalWorkout(zone: Zone): StructuredWorkout {
   // any caller stays correct.
   switch (zone) {
     case "threshold":
-      return intervalSession({
-        label: "Threshold",
-        reps: 4,
-        onMin: 8,
-        power: "95-102%",
-        offMin: 4,
-      });
+      return intervalSession({ label: "Threshold", reps: 4, onMin: 8, lo: 95, hi: 102, offMin: 4 });
     case "vo2":
-      return intervalSession({ label: "VO2 Max", reps: 5, onMin: 3, power: "110-118%", offMin: 3 });
+      return intervalSession({ label: "VO2 Max", reps: 5, onMin: 3, lo: 110, hi: 118, offMin: 3 });
     case "anaerobic":
       return intervalSession({
         label: "Anaerobic",
         reps: 8,
         onMin: 1,
-        power: "125-140%",
+        lo: 125,
+        hi: 140,
         offMin: 2,
       });
     // A legitimately different structured session (3x12 min @ 88-94%), not a

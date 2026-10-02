@@ -34,9 +34,8 @@ export interface LoadTargetsConfig {
   easy_minutes: number; // default 75 — duration of a standard easy ride
   easy_max_minutes: number; // default 120 — ceiling a block's CTL floor may stretch an easy ride to
   long_minutes: number; // default 180 — the one weekly long endurance ride (century durability)
-  hard_if: number; // default 0.88 — intensity factor for hard interval rides
-  hard_minutes: number; // default 75 — duration of a hard interval ride
-  sweet_spot_if: number; // default 0.88 — IF applied to the sweet_spot session (duration from its WorkoutDefinition)
+  hard_if: number; // default 0.88 — IF for an unzoned "Hard Ride" (zoned days are sized from their structured session)
+  hard_minutes: number; // default 75 — duration of an unzoned "Hard Ride"
 }
 
 // A date-ranged stretch of the season (see src/blocks.ts). Every field beyond

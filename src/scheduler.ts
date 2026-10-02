@@ -11,6 +11,7 @@ import { holidayPlaceholderWorkout } from "./holidays.js";
 import { isWithinBlock } from "./fueling.js";
 import { activeBlock, floorTargetTss, hardZoneFocusOn, windowTss } from "./blocks.js";
 import type { ReadinessSignal } from "./readiness.js";
+import { hardIntervalWorkout, sweetSpotWorkout, type StructuredWorkout } from "./workout.js";
 
 function addDays(dateStr: string, days: number): string {
   // Parse and mutate in UTC throughout. A bare "YYYY-MM-DD" is parsed as UTC
@@ -150,8 +151,9 @@ function buildCyclingDescription(intensity: "easy" | "hard", targetZone?: Zone):
 // Polarized placement: consolidate stress onto "hard days" (sweet-spot +
 // hard-cycling target days) so weights stack with them in the same session,
 // preserving full-recovery days for easy rides or rest. Within a stacked day,
-// the cycling workout precedes the weights session — hard intervals are done
-// on fresh legs; weights go last so the aerobic AMPK signal has begun to fade.
+// the cycling workout precedes the weights session — interval quality suffers
+// most from pre-fatigue, while heavy low-rep lifting holds up after a ride.
+// The routine text (config.yaml) gives the same order plus a 6+ hour gap.
 //
 // Fatigue tiers:
 //   - fresh:          hard cycling targets + weights co-locate on both
@@ -458,9 +460,8 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     });
   }
 
-  // Flatten, preserving date order. Within a day, cycling precedes weights:
-  // hard intervals go first on fresh legs; weights go after the aerobic
-  // AMPK signal has begun to fade.
+  // Flatten, preserving date order. Within a day, cycling precedes weights
+  // (see the ordering note on schedule()).
   const typeRank = (t: WorkoutType): number => {
     if (t === "rest") return 0;
     if (t === "cycling" || t === "sweet_spot") return 1;
@@ -525,6 +526,14 @@ function extendEasyRides(
 // (hasExistingLongRide), in which case no new ride is promoted so the week
 // keeps exactly one long ride. Weights get a duration only (no TSS/IF), which
 // matches how Intervals.icu treats WeightTraining.
+//
+// Sweet-spot and zoned hard days are sized from the structured session that
+// will be pushed — its step minutes and estimated IF — not from config
+// constants. A flat "75 min @ 0.88" stood in for every hard day, which put a
+// 52-min VO2 session at ~97 TSS instead of ~66, overstating planned CTL (and
+// so under-reading a ctl_floor shortfall) and over-feeding the day by ~300 kcal
+// in the fuelling block. hard_if/hard_minutes remain only for an unzoned
+// "Hard Ride", which has no structure to measure.
 // Returns the index of the promoted long ride, or -1 when none was promoted.
 function attachLoadTargets(
   out: PlannedWorkout[],
@@ -533,6 +542,11 @@ function attachLoadTargets(
 ): number {
   const lt = config.load_targets;
   const tss = (min: number, ifv: number): number => Math.round((min / 60) * ifv * ifv * 100);
+  const sizeFrom = (w: PlannedWorkout, s: StructuredWorkout): void => {
+    w.durationMin = s.minutes;
+    w.intensityFactor = s.intensityFactor;
+    w.load = tss(s.minutes, s.intensityFactor);
+  };
 
   // Promote the last easy cycling ride to the weekly long ride, unless the
   // calendar already holds one this week.
@@ -553,9 +567,7 @@ function attachLoadTargets(
       continue;
     }
     if (w.type === "sweet_spot") {
-      w.durationMin = config.sweet_spot.duration_minutes;
-      w.intensityFactor = lt.sweet_spot_if;
-      w.load = tss(w.durationMin, lt.sweet_spot_if);
+      sizeFrom(w, sweetSpotWorkout());
       continue;
     }
     // cycling
@@ -568,6 +580,8 @@ function attachLoadTargets(
         w.name = "Long Endurance Ride";
         w.description = `Weekly long endurance ride — steady Zone 2, ~${(lt.long_minutes / 60).toFixed(1)}h. Practice century fueling (~60-90g carb/hr). The durability anchor of the week.`;
       }
+    } else if (w.targetZone) {
+      sizeFrom(w, hardIntervalWorkout(w.targetZone));
     } else {
       w.durationMin = lt.hard_minutes;
       w.intensityFactor = lt.hard_if;

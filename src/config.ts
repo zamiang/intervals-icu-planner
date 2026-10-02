@@ -43,7 +43,6 @@ const LOAD_TARGETS_DEFAULTS: LoadTargetsConfig = {
   long_minutes: 180,
   hard_if: 0.88,
   hard_minutes: 75,
-  sweet_spot_if: 0.88,
 };
 
 const FTP_SYNC_DEFAULTS: FtpSyncConfig = {
@@ -153,8 +152,19 @@ function validateLoadTargets(raw: unknown): Partial<LoadTargetsConfig> {
     "long_minutes",
     "hard_if",
     "hard_minutes",
-    "sweet_spot_if",
   ];
+  // Reject unknown keys instead of ignoring them: a removed or misspelled key
+  // would otherwise look tunable while changing nothing.
+  for (const key of Object.keys(obj)) {
+    if (key === "sweet_spot_if") {
+      throw new Error(
+        "load_targets.sweet_spot_if was removed — sweet-spot load now comes from its structured steps; delete the key",
+      );
+    }
+    if (!(numericFields as string[]).includes(key)) {
+      throw new Error(`load_targets.${key} is not a recognized key`);
+    }
+  }
   for (const field of numericFields) {
     if (obj[field] === undefined) continue;
     if (typeof obj[field] !== "number") {

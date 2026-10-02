@@ -11,6 +11,7 @@ import {
 import { emptyDistribution, zoneLabel } from "../src/zones.js";
 import { computeReadiness, type ReadinessSignal } from "../src/readiness.js";
 import { projectCtl, windowTss } from "../src/blocks.js";
+import { workoutToEvent } from "../src/cli.js";
 import type {
   SchedulerInput,
   IntervalsEvent,
@@ -75,7 +76,6 @@ const BASE_CONFIG: Config = {
     long_minutes: 180,
     hard_if: 0.88,
     hard_minutes: 75,
-    sweet_spot_if: 0.88,
   },
   periodization: {
     taper_weeks: 4,
@@ -973,15 +973,58 @@ describe("schedule", () => {
       }
     });
 
-    it("computes sweet-spot TSS from its duration and sweet_spot_if", () => {
+    it("sizes the sweet-spot session from its structured steps", () => {
       const result = schedule(makeInput());
       const ss = result.find((w) => w.type === "sweet_spot");
       expect(ss).toBeDefined();
-      // 60 min @ IF 0.88 → (60/60) * 0.88^2 * 100 = 77.44 → 77
-      expect(ss!.durationMin).toBe(60);
-      expect(ss!.intensityFactor).toBe(0.88);
+      // 72 structured minutes at an NP-estimated IF of 0.80 → 1.2 * 0.64 * 100 = 77
+      expect(ss!.durationMin).toBe(72);
+      expect(ss!.intensityFactor).toBe(0.8);
       expect(ss!.load).toBe(77);
     });
+
+    it("sizes a zoned hard day from its interval session, not hard_minutes/hard_if", () => {
+      const result = schedule(
+        makeInput({
+          trainingLoad: { ctl: 50, atl: 40, tsb: 10 },
+          config: {
+            ...BASE_CONFIG,
+            scheduling: { ...BASE_CONFIG.scheduling, hard_zone_focus: "vo2" },
+          },
+        }),
+      );
+      const vo2 = result.find((w) => w.targetZone === "vo2");
+      expect(vo2).toBeDefined();
+      // 5x3 @ 110-118%: 52 min at ~0.87 → ~66 TSS, where the flat 75 min @ 0.88 said 97
+      expect(vo2!.durationMin).toBe(52);
+      expect(vo2!.intensityFactor).toBe(0.87);
+      expect(vo2!.load).toBe(66);
+    });
+
+    it.each(["vo2", "threshold", "anaerobic"] as const)(
+      "keeps planned load equal to what workoutToEvent pushes (%s focus)",
+      (focus) => {
+        const result = schedule(
+          makeInput({
+            trainingLoad: { ctl: 50, atl: 40, tsb: 10 },
+            config: {
+              ...BASE_CONFIG,
+              scheduling: { ...BASE_CONFIG.scheduling, hard_zone_focus: focus },
+            },
+          }),
+        );
+        // Guard against a vacuous pass: the zoned day and sweet spot must be compared.
+        expect(result.some((w) => w.targetZone === focus)).toBe(true);
+        expect(result.some((w) => w.type === "sweet_spot")).toBe(true);
+        for (const w of result) {
+          if (w.type === "rest" || w.type === "weights") continue;
+          const e = workoutToEvent(w);
+          expect(e.icu_training_load).toBe(w.load);
+          expect(e.icu_intensity).toBe(w.intensityFactor);
+          expect(e.moving_time).toBe(Math.round(w.durationMin! * 60));
+        }
+      },
+    );
 
     it("promotes exactly one easy ride to the weekly long endurance ride", () => {
       const result = schedule(makeInput());

@@ -17,7 +17,7 @@ npm ci
 cp .env.example .env   # then fill in credentials
 ```
 
-Requires Node.js 20+.
+Requires Node.js 22.12+.
 
 ## Configure
 
@@ -75,8 +75,10 @@ Workout definitions and scheduling rules live in `config.yaml`:
   generated workout (so the calendar shows targets and Intervals.icu folds them
   into planned CTL). TSS = `(minutes / 60) * IF^2 * 100`. The latest easy ride
   each week is auto-promoted to a single long endurance ride (`long_minutes`),
-  the century durability anchor. Keys: `easy_if`, `easy_minutes`, `long_minutes`,
-  `hard_if`, `hard_minutes`, `sweet_spot_if`.
+  the century durability anchor. Sweet-spot and zoned interval days are sized
+  from their structured steps (duration and an NP-estimated IF), so they need no
+  keys here. Keys: `easy_if`, `easy_minutes`, `easy_max_minutes`, `long_minutes`,
+  and `hard_if`/`hard_minutes` for an unzoned "Hard Ride" only.
 
 ## Commands
 
