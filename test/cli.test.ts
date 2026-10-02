@@ -326,10 +326,11 @@ describe("workoutToEvent", () => {
     // Structured steps replace the prose so Intervals.icu derives target watts.
     expect(event.description).toContain("88-94%");
     expect(event.description).not.toContain("long prose rationale");
-    // Duration and load follow the structured steps (72 min), not the config 60.
+    // Duration, IF and load follow the structured steps (72 min @ ~0.80), not
+    // the stale 60 min @ 0.88 the workout was handed.
     expect(event.moving_time).toBe(72 * 60);
-    expect(event.icu_training_load).toBe(Math.round((72 / 60) * 0.88 ** 2 * 100));
-    expect(event.icu_intensity).toBe(0.88);
+    expect(event.icu_intensity).toBe(0.8);
+    expect(event.icu_training_load).toBe(Math.round((72 / 60) * 0.8 ** 2 * 100));
   });
 
   it("emits a power+HR structured workout for an easy ride", () => {

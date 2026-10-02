@@ -43,7 +43,6 @@ const LOAD_TARGETS_DEFAULTS: LoadTargetsConfig = {
   long_minutes: 180,
   hard_if: 0.88,
   hard_minutes: 75,
-  sweet_spot_if: 0.88,
 };
 
 const FTP_SYNC_DEFAULTS: FtpSyncConfig = {
@@ -153,7 +152,6 @@ function validateLoadTargets(raw: unknown): Partial<LoadTargetsConfig> {
     "long_minutes",
     "hard_if",
     "hard_minutes",
-    "sweet_spot_if",
   ];
   for (const field of numericFields) {
     if (obj[field] === undefined) continue;

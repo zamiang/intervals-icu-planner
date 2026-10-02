@@ -15,7 +15,9 @@ weight_training:
     fades first with age and the one concurrent riding blunts most; heavy
     squats alone don't fully cover it.
 
-    Order: lift BEFORE riding on a shared day, or keep 6+ hours between them.
+    Order: on a shared day, ride first and lift after — ideally 6+ hours
+    later. The planner stacks this on interval days, and the intervals need
+    fresh legs more than the lifts do.
 
     Block 1: Heavy Strength (30 min) — the part that actually moves your power.
     Lift heavy, low reps, and rest 2-3 min between sets. These are loadable on
@@ -91,7 +93,9 @@ weight_training_cut:
     Power Primer (3 min)
     Box Jump or Squat Jump — 2x3, full rest, maximal intent. Step down.
 
-    Order: lift BEFORE riding on a shared day, or keep 6+ hours between them.
+    Order: on a shared day, ride first and lift after — ideally 6+ hours
+    later. The planner stacks this on interval days, and the intervals need
+    fresh legs more than the lifts do.
 
     Block 1: Heavy Strength (22 min) — rest 2-3 min between sets.
     1. Zercher Squat (or Belt/Safety-Bar Squat) — 3x5-6 @ heavy
@@ -140,7 +144,7 @@ weight_training_taper:
 
 sweet_spot:
   name: "Sweet Spot Intervals"
-  duration_minutes: 60
+  duration_minutes: 72 # informational: planned load comes from the structured steps
   # NOTE: the calendar event never carries this prose — sweet-spot sessions are
   # always pushed as structured `% FTP` steps (src/workout.ts), which is what
   # shows targets in Intervals.icu. This text is the coaching rationale kept
@@ -243,9 +247,11 @@ load_targets:
   easy_minutes: 75 # standard easy ride duration → ~48 TSS
   easy_max_minutes: 120 # ceiling a block's ctl_floor may stretch an easy ride to → ~77 TSS
   long_minutes: 180 # weekly long endurance ride → ~127 TSS (build this up over a block)
-  hard_if: 0.88 # hard interval ride IF → ~90 TSS at 75 min
+  # Sweet-spot and zoned interval days are sized from their structured steps
+  # (src/workout.ts) — e.g. 5x3 VO2 = 52 min @ ~0.87 → ~66 TSS. These two only
+  # apply to an unzoned "Hard Ride", which has no structure to measure.
+  hard_if: 0.88
   hard_minutes: 75
-  sweet_spot_if: 0.88 # applied to the sweet_spot session (60 min) → ~77 TSS
 
 # eFTP sync: `plan` and `push-week` read Intervals.icu's rolling eFTP estimate
 # (the icu_rolling_ftp stamped on the latest ride) and write it to the Ride

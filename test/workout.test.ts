@@ -75,6 +75,19 @@ describe("hardIntervalWorkout", () => {
     expect(w.minutes).toBe(46); // 12 + 2 + 8x(1+2) + 8
   });
 
+  it("estimates each session's IF as normalized power over its steps", () => {
+    // NP weights hard efforts by the 4th power, so a short VO2 session reads
+    // harder than a longer sweet-spot one despite a lower average power.
+    expect(sweetSpotWorkout().intensityFactor).toBe(0.8);
+    expect(hardIntervalWorkout("vo2").intensityFactor).toBe(0.87);
+    expect(hardIntervalWorkout("threshold").intensityFactor).toBe(0.84);
+    for (const z of ["threshold", "vo2", "anaerobic"] as const) {
+      const ifv = hardIntervalWorkout(z).intensityFactor;
+      expect(ifv).toBeGreaterThan(0.75);
+      expect(ifv).toBeLessThan(1);
+    }
+  });
+
   it("falls back to the sweet-spot session for the sweet_spot zone", () => {
     expect(hardIntervalWorkout("sweet_spot").text).toBe(sweetSpotWorkout().text);
   });
