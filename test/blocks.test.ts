@@ -207,6 +207,18 @@ blocks:
     await expect(load(`blocks:${body}\n`)).rejects.toThrow(err);
   });
 
+  it("rejects the removed sweet_spot_if with a pointer to the change", async () => {
+    await expect(load("load_targets: { sweet_spot_if: 0.88 }\n")).rejects.toThrow(
+      /sweet_spot_if was removed/,
+    );
+  });
+
+  it("rejects an unknown load_targets key", async () => {
+    await expect(load("load_targets: { easy_minuts: 90 }\n")).rejects.toThrow(
+      /easy_minuts is not a recognized key/,
+    );
+  });
+
   it("rejects an easy ceiling below the standard easy ride", async () => {
     await expect(
       load("load_targets: { easy_minutes: 90, easy_max_minutes: 60 }\n"),

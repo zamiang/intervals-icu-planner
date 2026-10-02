@@ -144,7 +144,7 @@ weight_training_taper:
 
 sweet_spot:
   name: "Sweet Spot Intervals"
-  duration_minutes: 72 # informational: planned load comes from the structured steps
+  duration_minutes: 72 # required by validation but unused for sizing: planned load comes from the structured steps
   # NOTE: the calendar event never carries this prose — sweet-spot sessions are
   # always pushed as structured `% FTP` steps (src/workout.ts), which is what
   # shows targets in Intervals.icu. This text is the coaching rationale kept
@@ -249,8 +249,9 @@ load_targets:
   long_minutes: 180 # weekly long endurance ride → ~127 TSS (build this up over a block)
   # Sweet-spot and zoned interval days are sized from their structured steps
   # (src/workout.ts) — e.g. 5x3 VO2 = 52 min @ ~0.87 → ~66 TSS. These two only
-  # apply to an unzoned "Hard Ride", which has no structure to measure.
-  hard_if: 0.88
+  # apply to an unzoned "Hard Ride" (only when a week has more hard days than
+  # hard zones), which has no structure to measure.
+  hard_if: 0.88 # → ~97 TSS at 75 min
   hard_minutes: 75
 
 # eFTP sync: `plan` and `push-week` read Intervals.icu's rolling eFTP estimate

@@ -153,6 +153,18 @@ function validateLoadTargets(raw: unknown): Partial<LoadTargetsConfig> {
     "hard_if",
     "hard_minutes",
   ];
+  // Reject unknown keys instead of ignoring them: a removed or misspelled key
+  // would otherwise look tunable while changing nothing.
+  for (const key of Object.keys(obj)) {
+    if (key === "sweet_spot_if") {
+      throw new Error(
+        "load_targets.sweet_spot_if was removed — sweet-spot load now comes from its structured steps; delete the key",
+      );
+    }
+    if (!(numericFields as string[]).includes(key)) {
+      throw new Error(`load_targets.${key} is not a recognized key`);
+    }
+  }
   for (const field of numericFields) {
     if (obj[field] === undefined) continue;
     if (typeof obj[field] !== "number") {

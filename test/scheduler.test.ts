@@ -1001,20 +1001,30 @@ describe("schedule", () => {
       expect(vo2!.load).toBe(66);
     });
 
-    it("keeps a planned workout's load equal to what workoutToEvent pushes", () => {
-      const result = schedule(
-        makeInput({
-          trainingLoad: { ctl: 50, atl: 40, tsb: 10 },
-          zoneDistribution: { ...emptyDistribution(), endurance: 1.0 },
-        }),
-      );
-      for (const w of result) {
-        if (w.type === "rest" || w.type === "weights") continue;
-        const e = workoutToEvent(w);
-        expect(e.icu_training_load).toBe(w.load);
-        expect(e.moving_time).toBe(Math.round(w.durationMin! * 60));
-      }
-    });
+    it.each(["vo2", "threshold", "anaerobic"] as const)(
+      "keeps planned load equal to what workoutToEvent pushes (%s focus)",
+      (focus) => {
+        const result = schedule(
+          makeInput({
+            trainingLoad: { ctl: 50, atl: 40, tsb: 10 },
+            config: {
+              ...BASE_CONFIG,
+              scheduling: { ...BASE_CONFIG.scheduling, hard_zone_focus: focus },
+            },
+          }),
+        );
+        // Guard against a vacuous pass: the zoned day and sweet spot must be compared.
+        expect(result.some((w) => w.targetZone === focus)).toBe(true);
+        expect(result.some((w) => w.type === "sweet_spot")).toBe(true);
+        for (const w of result) {
+          if (w.type === "rest" || w.type === "weights") continue;
+          const e = workoutToEvent(w);
+          expect(e.icu_training_load).toBe(w.load);
+          expect(e.icu_intensity).toBe(w.intensityFactor);
+          expect(e.moving_time).toBe(Math.round(w.durationMin! * 60));
+        }
+      },
+    );
 
     it("promotes exactly one easy ride to the weekly long endurance ride", () => {
       const result = schedule(makeInput());

@@ -47,7 +47,8 @@ interface StepGroup {
 // makes a 3x12 sweet-spot ride (~0.80) read easier than its 88-94% main set
 // and a short 5x3 VO2 ride (~0.87) read harder than its average power.
 // Ignoring NP's 30-s smoothing over step edges is a negligible error at these
-// step lengths. Rounded to two places, the precision Intervals.icu shows.
+// step lengths. Rounded to two places; Intervals.icu's own NP from the steps
+// can differ by a point or so of TSS, which is noise for planning.
 export function estimateIntensityFactor(groups: StepGroup[]): number {
   let minutes = 0;
   let weighted = 0;
