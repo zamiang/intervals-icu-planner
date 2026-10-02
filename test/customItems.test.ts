@@ -1,3 +1,4 @@
+import { runInNewContext } from "node:vm";
 import { describe, it, expect } from "vitest";
 import {
   CUSTOM_ITEM_DEFS,
@@ -140,14 +141,13 @@ describe("CUSTOM_ITEM_DEFS", () => {
 });
 
 // Run a field script the way the Intervals.icu sandbox does: the block's last
-// expression is the stored value. A direct eval returns a block's completion
-// value and sees the enclosing `icu` parameter, so the script runs verbatim.
+// expression is the stored value. `vm` returns a script's completion value and
+// runs it verbatim in an isolated context with only `icu` in scope.
 function runField(code: string, icu: unknown): unknown {
   const def = CUSTOM_ITEM_DEFS.find(
     (d) => d.type === "ACTIVITY_FIELD" && (d.content as { code: string }).code === code,
   )!;
-  const script = (def.content as { script: string }).script;
-  return new Function("icu", `return eval(${JSON.stringify(script)})`)(icu);
+  return runInNewContext((def.content as { script: string }).script, { icu });
 }
 
 // A synthetic ride: `n` seconds at `watts`, breathing `br` breaths/min of
