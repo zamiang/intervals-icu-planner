@@ -206,6 +206,11 @@ scheduling:
   # belongs to one stretch of the season goes on a block below instead, so it
   # ends on its date rather than on someone remembering to edit it.
   hard_zone_focus: null
+  # Work days can't fit a long ride. Caps every easy ride Mon-Fri (including a
+  # ctl_floor stretch) and keeps the weekly long ride on Saturday or Sunday; a
+  # week with no open weekend day gets no long ride rather than a squeezed one.
+  # Structured quality sessions are sized by their steps and stay well under.
+  weekday_max_minutes: 120
 
 # Season blocks: what each stretch of the season is for. The weekly planner
 # still decides how hard *this* week is from TSB/readiness; a block only sets
@@ -226,7 +231,8 @@ scheduling:
 # both the VO2 block and the gap after it.
 blocks:
   # With sweet spot already weekly, the second quality day is the one place
-  # VO2max work fits, and VO2max is what falls fastest when masters riders lose
+  # VO2max work fits; a moderate week (one quality day) rides VO2 in place of
+  # sweet spot so the block never goes a week without it. VO2max is what falls fastest when masters riders lose
   # volume (loss per decade roughly triples once volume drops >20%). The
   # session is 5x3 min @ 110-118% FTP (src/workout.ts). Runs inside the cut, so
   # expect to hold fitness, not build it.

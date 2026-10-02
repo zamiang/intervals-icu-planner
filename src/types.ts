@@ -20,6 +20,7 @@ export interface SchedulingConfig {
   max_weekly_ramp_pct: number; // default 7 — CTL ramp above this triggers an easy-bias guard
   hard_cycling_days: number; // default 1 — max hard interval rides/week (beyond the sweet-spot day); the 80/20 cap. Remaining days fill easy.
   hard_zone_focus: HardZone | null; // default null — pin hard-cycling days to this zone (e.g. a VO2max block) instead of the most-deficient zone
+  weekday_max_minutes: number | null; // default null — cap on any easy/long ride Mon-Fri; the long ride moves to a weekend day
 }
 
 // The zones a hard-cycling day can target. Sweet spot has its own weekly

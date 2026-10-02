@@ -46,6 +46,7 @@ const BASE_CONFIG: Config = {
     max_weekly_ramp_pct: 7,
     hard_cycling_days: 1,
     hard_zone_focus: null,
+    weekday_max_minutes: null,
   },
   fueling: {
     enabled: false,
@@ -1577,9 +1578,11 @@ describe("block progression", () => {
     const result = schedule(
       makeInput({ trainingLoad: freshLoad, config: cfg(true), readiness: suppressed }),
     );
-    const ss = result.find((w) => w.type === "sweet_spot")!;
-    expect(ss.progressionStep).toBeUndefined();
-    expect(ss.durationMin).toBe(72);
+    // Suppression drops the week to moderate, so its one quality slot is the
+    // VO2 focus session — at rung 0 (5x3: 12 + 2 + 5x6 + 8 = 52 min).
+    const vo2 = result.find((w) => w.targetZone === "vo2")!;
+    expect(vo2.progressionStep).toBeUndefined();
+    expect(vo2.durationMin).toBe(52);
     // The long ride steps back too, never below long_minutes.
     expect(result.find((w) => w.name === "Long Endurance Ride")!.durationMin).toBe(180);
   });
@@ -1587,5 +1590,204 @@ describe("block progression", () => {
   it("leaves sessions at rung 0 in a block without progression", () => {
     const result = schedule(makeInput({ trainingLoad: freshLoad, config: cfg(false) }));
     expect(result.some((w) => w.progressionStep !== undefined)).toBe(false);
+  });
+});
+
+describe("moderate-week zone focus", () => {
+  const moderateLoad = { ctl: 50, atl: 52, tsb: 0 };
+  const vo2Cfg: Config = {
+    ...BASE_CONFIG,
+    scheduling: { ...BASE_CONFIG.scheduling, hard_zone_focus: "vo2" },
+  };
+
+  it("gives a moderate week's one quality slot to the focus zone instead of sweet spot", () => {
+    const result = schedule(makeInput({ trainingLoad: moderateLoad, config: vo2Cfg }));
+    expect(result.some((w) => w.type === "sweet_spot")).toBe(false);
+    const hard = result.filter((w) => w.type === "cycling" && w.intensity === "hard");
+    expect(hard).toHaveLength(1);
+    expect(hard[0].targetZone).toBe("vo2");
+    expect(hard[0].name).toBe("VO2 Max Intervals");
+  });
+
+  it("keeps sweet spot in a moderate week with no focus", () => {
+    const result = schedule(makeInput({ trainingLoad: moderateLoad }));
+    expect(result.filter((w) => w.type === "sweet_spot")).toHaveLength(1);
+    expect(result.some((w) => w.targetZone !== undefined)).toBe(false);
+  });
+
+  it("keeps sweet spot when a hard ride is already on the calendar", () => {
+    const existing: IntervalsEvent[] = [
+      {
+        id: 1,
+        start_date_local: "2026-04-21T00:00:00",
+        name: "VO2 Max Intervals",
+        category: "WORKOUT",
+        type: "Ride",
+      } as IntervalsEvent,
+    ];
+    const result = schedule(
+      makeInput({ trainingLoad: moderateLoad, config: vo2Cfg, existingEvents: existing }),
+    );
+    expect(result.filter((w) => w.type === "sweet_spot")).toHaveLength(1);
+    expect(result.some((w) => w.targetZone === "vo2")).toBe(false);
+  });
+
+  it("adds no focus session when a sweet spot is already on the calendar", () => {
+    const existing: IntervalsEvent[] = [
+      {
+        id: 1,
+        start_date_local: "2026-04-22T00:00:00",
+        name: "Sweet Spot Intervals",
+        category: "WORKOUT",
+        type: "Ride",
+      } as IntervalsEvent,
+    ];
+    const result = schedule(
+      makeInput({ trainingLoad: moderateLoad, config: vo2Cfg, existingEvents: existing }),
+    );
+    expect(result.some((w) => w.type === "sweet_spot")).toBe(false);
+    expect(result.some((w) => w.intensity === "hard" && w.type === "cycling")).toBe(false);
+  });
+
+  it("keeps sweet spot in a fatigued week", () => {
+    const result = schedule(
+      makeInput({ trainingLoad: { ctl: 50, atl: 65, tsb: -15 }, config: vo2Cfg }),
+    );
+    expect(result.filter((w) => w.type === "sweet_spot")).toHaveLength(1);
+    expect(result.some((w) => w.targetZone === "vo2")).toBe(false);
+  });
+
+  it("still gives a fresh week both sweet spot and the focus session", () => {
+    const result = schedule(
+      makeInput({ trainingLoad: { ctl: 50, atl: 40, tsb: 10 }, config: vo2Cfg }),
+    );
+    expect(result.filter((w) => w.type === "sweet_spot")).toHaveLength(1);
+    expect(result.filter((w) => w.targetZone === "vo2")).toHaveLength(1);
+  });
+});
+
+describe("weekday_max_minutes", () => {
+  // makeInput's week is Mon 2026-04-20 .. Sun 2026-04-26.
+  const capCfg = (cap: number | null): Config => ({
+    ...BASE_CONFIG,
+    scheduling: { ...BASE_CONFIG.scheduling, weekday_max_minutes: cap },
+  });
+  const isWeekend = (d: string): boolean => [0, 6].includes(new Date(d).getUTCDay());
+
+  it("puts the long ride on a weekend day and keeps weekday rides under the cap", () => {
+    for (const tsb of [10, 0, -15]) {
+      const result = schedule(
+        makeInput({ trainingLoad: { ctl: 50, atl: 50 - tsb, tsb }, config: capCfg(60) }),
+      );
+      const long = result.find((w) => w.name === "Long Endurance Ride")!;
+      expect(isWeekend(long.date)).toBe(true);
+      for (const w of result) {
+        if (w.type === "cycling" && w.intensity === "easy" && !isWeekend(w.date)) {
+          expect(w.durationMin).toBeLessThanOrEqual(60);
+        }
+      }
+    }
+  });
+
+  it("moves the long ride off a weekday when the window starts mid-week", () => {
+    // Thu..Wed window: uncapped, the last easy ride (Wednesday) becomes long.
+    const thursday = { startDate: "2026-04-23" };
+    const uncapped = schedule(makeInput(thursday)).find((w) => w.name === "Long Endurance Ride")!;
+    expect(isWeekend(uncapped.date)).toBe(false);
+    const capped = schedule(makeInput({ ...thursday, config: capCfg(120) })).find(
+      (w) => w.name === "Long Endurance Ride",
+    )!;
+    expect(isWeekend(capped.date)).toBe(true);
+    for (const w of schedule(makeInput({ ...thursday, config: capCfg(120) }))) {
+      if (w.type !== "cycling") continue;
+      if (isWeekend(w.date)) continue;
+      expect(w.durationMin, `${w.date} ${w.name}`).toBeLessThanOrEqual(120);
+    }
+  });
+
+  it("caps an unstructured hard ride on a weekday", () => {
+    // No zone distribution and no focus → Phase 2 places an unzoned "Hard Ride"
+    // sized from hard_minutes, which has no steps to keep it short.
+    const cfg: Config = {
+      ...capCfg(60),
+      load_targets: { ...BASE_CONFIG.load_targets, hard_minutes: 150 },
+    };
+    const result = schedule(
+      makeInput({ trainingLoad: { ctl: 50, atl: 40, tsb: 10 }, config: cfg }),
+    );
+    const hard = result.filter((w) => w.name === "Hard Ride");
+    expect(hard.length).toBeGreaterThan(0);
+    for (const w of hard) {
+      expect(w.durationMin).toBe(isWeekend(w.date) ? 150 : 60);
+    }
+  });
+
+  it("promotes no long ride when both weekend days are taken", () => {
+    const existing: IntervalsEvent[] = ["2026-04-25", "2026-04-26"].map(
+      (d, i) =>
+        ({
+          id: i + 1,
+          start_date_local: `${d}T00:00:00`,
+          name: "Group Ride",
+          category: "WORKOUT",
+          type: "Ride",
+        }) as IntervalsEvent,
+    );
+    const result = schedule(makeInput({ config: capCfg(120), existingEvents: existing }));
+    expect(result.some((w) => w.name === "Long Endurance Ride")).toBe(false);
+    for (const w of result) {
+      if (w.type === "cycling" && w.intensity === "easy") {
+        expect(w.durationMin).toBeLessThanOrEqual(120);
+      }
+    }
+  });
+
+  it("rolls a floor shortfall the weekday cap clips over to weekend easy rides", () => {
+    // Mon..Sun week: Sunday takes the long ride, Saturday stays a standard
+    // easy ride that can absorb what the capped weekday rides can't.
+    const cfg: Config = {
+      ...capCfg(80),
+      load_targets: { ...BASE_CONFIG.load_targets, easy_max_minutes: 150 },
+      blocks: [{ name: "W", start_date: "2026-04-01", end_date: "2026-05-31", ctl_floor: 80 }],
+    };
+    const input = makeInput({
+      trainingLoad: { ctl: 50, atl: 50, tsb: 0 },
+      config: cfg,
+    });
+    const result = schedule(input);
+    const easy = result.filter(
+      (w) => w.type === "cycling" && w.intensity === "easy" && w.name === "Easy Ride",
+    );
+    const weekday = easy.filter((w) => !isWeekend(w.date));
+    const weekend = easy.filter((w) => isWeekend(w.date));
+    expect(weekday.length).toBeGreaterThan(0);
+    expect(weekend.length).toBeGreaterThan(0);
+    for (const w of weekday) expect(w.durationMin).toBe(80);
+    // The weekend picks up what the weekdays couldn't — past what an even
+    // split alone would have given it.
+    for (const w of weekend) expect(w.durationMin).toBeGreaterThan(80);
+    // This floor asks for more than every ceiling allows, so the weekend ride
+    // fills to easy_max_minutes and the rest is left unmet, not forced.
+    for (const w of weekend) expect(w.durationMin).toBe(150);
+  });
+
+  it("caps a ctl_floor stretch on weekdays", () => {
+    const cfg: Config = {
+      ...capCfg(80),
+      load_targets: { ...BASE_CONFIG.load_targets, easy_max_minutes: 150 },
+      blocks: [{ name: "W", start_date: "2026-04-01", end_date: "2026-05-31", ctl_floor: 80 }],
+    };
+    const result = schedule(makeInput({ trainingLoad: { ctl: 50, atl: 50, tsb: 0 }, config: cfg }));
+    const weekdayEasy = result.filter(
+      (w) => w.type === "cycling" && w.intensity === "easy" && !isWeekend(w.date),
+    );
+    expect(weekdayEasy.length).toBeGreaterThan(0);
+    for (const w of weekdayEasy) expect(w.durationMin).toBeLessThanOrEqual(80);
+  });
+
+  it("changes nothing when unset", () => {
+    const a = schedule(makeInput());
+    const b = schedule(makeInput({ config: capCfg(null) }));
+    expect(b).toEqual(a);
   });
 });

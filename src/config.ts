@@ -28,6 +28,7 @@ const SCHEDULING_DEFAULTS: SchedulingConfig = {
   max_weekly_ramp_pct: 7,
   hard_cycling_days: 1,
   hard_zone_focus: null,
+  weekday_max_minutes: null,
 };
 
 const PERIODIZATION_DEFAULTS: PeriodizationConfig = {
@@ -109,7 +110,10 @@ function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
   }
   const obj = raw as Record<string, unknown>;
   const out: Partial<SchedulingConfig> = {};
-  const numericFields: Exclude<keyof SchedulingConfig, "hard_zone_focus">[] = [
+  const numericFields: Exclude<
+    keyof SchedulingConfig,
+    "hard_zone_focus" | "weekday_max_minutes"
+  >[] = [
     "tsb_fresh",
     "tsb_fatigued",
     "tsb_very_fatigued",
@@ -135,6 +139,13 @@ function validateScheduling(raw: unknown): Partial<SchedulingConfig> {
       );
     }
     out.hard_zone_focus = v as HardZone | null;
+  }
+  if (obj.weekday_max_minutes !== undefined) {
+    const v = obj.weekday_max_minutes;
+    if (v !== null && (typeof v !== "number" || !Number.isFinite(v) || v <= 0)) {
+      throw new Error("scheduling.weekday_max_minutes must be null or a positive number");
+    }
+    out.weekday_max_minutes = v as number | null;
   }
   return out;
 }
