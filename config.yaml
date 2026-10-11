@@ -185,7 +185,12 @@ periodization:
   race_date: null # fallback only; the RACE_A calendar event is used when present
 
 scheduling:
-  tsb_fresh: 5
+  # Planning runs Monday morning, the day after the long ride, when TSB sits at
+  # its weekly low: a normally executed week reads about -5 to -10 here. At the
+  # old +5 only a week following a low week ever counted as fresh, so a block
+  # got its second quality day only after a missed week. HRV / resting HR /
+  # steps (readiness below) still pull a genuinely tired week down a tier.
+  tsb_fresh: -6
   tsb_fatigued: -10
   tsb_very_fatigued: -20
   weight_sessions: 2
@@ -238,7 +243,11 @@ blocks:
   # expect to hold fitness, not build it.
   - name: "Autumn VO2"
     start_date: "2026-09-19"
-    end_date: "2026-11-22"
+    # Ends with the cut (fueling.end_date) and hands straight to Winter base:
+    # the two unstructured weeks after 11/22 were Thanksgiving, exactly where
+    # 2025 fell apart (the week of 11/17 dropped to ~130 TSS and CTL went
+    # 65 -> 48 in four weeks).
+    end_date: "2026-12-06"
     hard_zone_focus: vo2
     # VO2 5x3 -> 6x3 -> 5x4 -> 6x4 -> 5x5; sweet spot 3x12 -> 3x15 -> 2x20.
     progression: true
@@ -255,14 +264,17 @@ blocks:
 # Planned-load targets the planner attaches to each generated workout, so the
 # calendar shows TSS/duration/IF and Intervals.icu folds them into planned CTL.
 # TSS = (minutes / 60) * IF^2 * 100. The latest easy ride each week is promoted
-# to a single long endurance ride (long_minutes) — the century durability anchor.
+# to a single long endurance ride (long_minutes). With no event on the calendar
+# it is sized to what actually gets ridden once the season moves indoors, not to
+# a century: a 165-195 min plan was being ridden at ~105-115 min, and the fuel
+# note for that day is sized from the planned duration.
 # Tune these to your FTP and the volume your week can absorb.
 load_targets:
   easy_if: 0.62 # easy Zone 2 intensity factor (watts render from live FTP at push time)
   easy_minutes: 75 # standard easy ride duration → ~48 TSS
   easy_max_minutes: 120 # ceiling a block's ctl_floor may stretch an easy ride to → ~77 TSS
-  long_minutes: 180 # weekly long endurance ride → ~115 TSS
-  long_max_minutes: 210 # a progressing block grows the long ride +15 min/step up to this
+  long_minutes: 150 # weekly long endurance ride → ~96 TSS
+  long_max_minutes: 180 # a progressing block grows the long ride +15 min/step up to this
   # Sweet-spot and zoned interval days are sized from their structured steps
   # (src/workout.ts) — e.g. 5x3 VO2 = 52 min @ ~0.87 → ~66 TSS. These two only
   # apply to an unzoned "Hard Ride" (only when a week has more hard days than
