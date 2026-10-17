@@ -104,11 +104,11 @@ describe("planSync", () => {
 });
 
 describe("CUSTOM_ITEM_DEFS", () => {
-  it("defines the four charts and four fields with unique names", () => {
+  it("defines the five charts and eight fields with unique names", () => {
     const charts = CUSTOM_ITEM_DEFS.filter((d) => d.type === "FITNESS_CHART");
     const fields = CUSTOM_ITEM_DEFS.filter((d) => d.type === "ACTIVITY_FIELD");
-    expect(charts).toHaveLength(4);
-    expect(fields).toHaveLength(4);
+    expect(charts).toHaveLength(5);
+    expect(fields).toHaveLength(8);
     const names = CUSTOM_ITEM_DEFS.map((d) => `${d.type}:${d.name}`);
     expect(new Set(names).size).toBe(names.length);
   });
@@ -200,5 +200,52 @@ describe("breathing field scripts", () => {
   it("RespDecoupling uses ventilation: 10% more air in the 2nd half at equal power ≈ 10%", () => {
     expect(runField("RespDecoupling", strapRide(3600, { ve2: 1.1 })) as number).toBeCloseTo(10, 0);
     expect(runField("RespDrift", strapRide(3600, { ve2: 1.1 })) as number).toBeCloseTo(10, 0);
+  });
+});
+
+// A synthetic CORE ride: core temp climbs linearly from `start` at `rate` °C
+// per minute, heat strain tracks it, and the device reads a steady room temp.
+function coreRide(n: number, opts: { start?: number; rate?: number; spikeAt?: number } = {}) {
+  const { start = 37, rate = 0.035, spikeAt } = opts;
+  const core = Array.from({ length: n }, (_, i) => start + (rate * i) / 60);
+  if (spikeAt !== undefined) core[spikeAt] = 41.9;
+  return {
+    streams: {
+      core_temperature: core,
+      heat_strain_index: core.map((c) => Math.max(0, (c - 37) * 1.2)),
+      temp: Array.from({ length: n }, () => 23.5),
+    },
+  };
+}
+
+describe("core temperature field scripts", () => {
+  it("CoreMax: peak one-minute mean, immune to a single spiked sample", () => {
+    // 60 min at 0.035 °C/min → last minute averages ≈ 37 + 0.035 × 59.5.
+    expect(runField("CoreMax", coreRide(3600)) as number).toBeCloseTo(39.08, 1);
+    expect(runField("CoreMax", coreRide(3600, { spikeAt: 600 })) as number).toBeCloseTo(39.08, 1);
+  });
+
+  it("CoreRise30: minutes 27–33 mean minus minutes 0–3 mean", () => {
+    // (30 − 1.5) min × 0.035 °C/min ≈ 1.0 °C.
+    expect(runField("CoreRise30", coreRide(3600)) as number).toBeCloseTo(1.0, 1);
+    expect(runField("CoreRise30", coreRide(1900))).toBeNull(); // too short to reach minute 33
+  });
+
+  it("HeatStrainMax: peak one-minute heat strain", () => {
+    expect(runField("HeatStrainMax", coreRide(3600)) as number).toBeCloseTo(2.5, 1);
+  });
+
+  it("core fields reject rides without a usable CORE stream", () => {
+    const noCore = { streams: { temp: Array.from({ length: 3600 }, () => 23.5) } };
+    const dropout = { streams: { core_temperature: Array.from({ length: 3600 }, () => 0) } };
+    for (const code of ["CoreMax", "CoreRise30", "HeatStrainMax"]) {
+      expect(runField(code, noCore)).toBeNull();
+      expect(runField(code, dropout)).toBeNull();
+    }
+  });
+
+  it("RoomTemp: ride-average device temperature, with or without CORE", () => {
+    expect(runField("RoomTemp", coreRide(3600)) as number).toBeCloseTo(23.5, 5);
+    expect(runField("RoomTemp", { streams: {} })).toBeNull();
   });
 });

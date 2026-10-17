@@ -215,6 +215,81 @@ const VENT_EFF_SCRIPT = `{
   v
 }`;
 
+// CORE sensor gate shared by the core-temperature scripts. Only readings in a
+// physiological range (35–42 °C) count, so a dropout's zeros or a pairing
+// glitch can't set a peak; fewer than 10 minutes of them leaves `ct` null.
+// Peaks are taken over one-minute means (each needing 30+ valid samples) so a
+// single spiked sample can't become the ride's maximum.
+const CORE_GATE = `let ct = icu.streams.core_temperature
+    let ok = 0
+    if (ct) for (let i = 0; i < ct.length; i++) if (ct[i] >= 35 && ct[i] <= 42) ok++
+    if (ok < 600) ct = null`;
+
+const MINUTE_PEAK = `let peak = (xs, lo, hi) => {
+      let best = null
+      for (let m = 0; m + 60 <= xs.length; m += 60) {
+        let s = 0, c = 0
+        for (let i = m; i < m + 60; i++) if (xs[i] != null && xs[i] >= lo && xs[i] <= hi) { s += xs[i]; c++ }
+        if (c >= 30 && (best == null || s / c > best)) best = s / c
+      }
+      return best
+    }`;
+
+const CORE_MAX_SCRIPT = `{
+  let v = null
+  try {
+    ${CORE_GATE}
+    ${MINUTE_PEAK}
+    if (ct) v = peak(ct, 35, 42)
+  } catch (e) {}
+  v
+}`;
+
+// Core rise over the first half hour: mean of minutes 27–33 minus mean of
+// minutes 0–3. The early rate is the heat-adaptation / cooling-setup signal —
+// later in a ride core temp plateaus once heat loss catches up (or keeps
+// climbing when it doesn't, which CoreMax shows).
+const CORE_RISE_SCRIPT = `{
+  let v = null
+  try {
+    ${CORE_GATE}
+    if (ct && ct.length >= 1980) {
+      let s1 = 0, c1 = 0, s2 = 0, c2 = 0
+      for (let i = 0; i < 180; i++) if (ct[i] >= 35 && ct[i] <= 42) { s1 += ct[i]; c1++ }
+      for (let i = 1620; i < 1980; i++) if (ct[i] >= 35 && ct[i] <= 42) { s2 += ct[i]; c2++ }
+      if (c1 >= 60 && c2 >= 120) v = s2 / c2 - s1 / c1
+    }
+  } catch (e) {}
+  v
+}`;
+
+const HEAT_STRAIN_MAX_SCRIPT = `{
+  let v = null
+  try {
+    ${CORE_GATE}
+    ${MINUTE_PEAK}
+    let hsi = icu.streams.heat_strain_index
+    if (ct && hsi) v = peak(hsi, 0, 10)
+  } catch (e) {}
+  v
+}`;
+
+// Ride-average device temperature, as a field the fitness chart can plot next
+// to the core values: core temperature is mostly a function of the room, so a
+// core trend read without it would mistake a warm day for lost fitness.
+const ROOM_TEMP_SCRIPT = `{
+  let v = null
+  try {
+    let t = icu.streams.temp
+    if (t) {
+      let s = 0, c = 0
+      for (let i = 0; i < t.length; i++) if (t[i] != null) { s += t[i]; c++ }
+      if (c > 600) v = s / c
+    }
+  } catch (e) {}
+  v
+}`;
+
 function activityField(
   code: string,
   name: string,
@@ -383,6 +458,62 @@ export const CUSTOM_ITEM_DEFS: CustomItemDef[] = [
       ),
     ],
   ),
+  fitnessChart(
+    "coretmp1",
+    "Core Temperature (Rides)",
+    "Peak core temp and first-30-min core rise per CORE-sensor ride, with ride-average room " +
+      "temp alongside. Read the core values against the room: a hot day raises both. Lower " +
+      "rise at the same room temp and power = better heat adaptation or cooling. Sensor data " +
+      "starts 2026-10-17.",
+    "°C",
+    [
+      plot(
+        1,
+        "CoreMax",
+        "Core max",
+        "Peak 1-min core temperature",
+        "temperature",
+        "dot",
+        "rgba(214,39,40, 0.4)",
+        "rgb(214,39,40)",
+        "dec1",
+      ),
+      plot(
+        2,
+        "CoreMax",
+        "28d avg",
+        "Core max 28d moving avg",
+        "temperature",
+        "line",
+        "rgba(214,39,40, 0.4)",
+        "rgb(160,20,20)",
+        "dec1",
+        { agg: "moving_avg", aggDays: 28 },
+      ),
+      plot(
+        3,
+        "CoreRise30",
+        "Core rise",
+        "Core rise over the first 30 min",
+        "temperature_delta",
+        "dot",
+        "rgba(255,127,14, 0.4)",
+        "rgb(255,127,14)",
+        "dec1",
+      ),
+      plot(
+        4,
+        "RoomTemp",
+        "Room",
+        "Ride-average device temperature",
+        "temperature_room",
+        "dot",
+        "rgba(127,127,127, 0.4)",
+        "rgb(127,127,127)",
+        "dec1",
+      ),
+    ],
+  ),
   activityField(
     "TempDrift",
     "Temp Drift",
@@ -422,6 +553,44 @@ export const CUSTOM_ITEM_DEFS: CustomItemDef[] = [
     "idx",
     "#17becf",
     VENT_EFF_SCRIPT,
+  ),
+  activityField(
+    "CoreMax",
+    "Core Temp Max",
+    "Peak one-minute core body temperature (deg C) from the CORE sensor. Needs 10+ min of " +
+      "readings in 35-42 deg C. Indoors, a value that keeps climbing past ~38.5 means the " +
+      "cooling setup, not fitness, is the limiter.",
+    "°C",
+    "#d62728",
+    CORE_MAX_SCRIPT,
+  ),
+  activityField(
+    "CoreRise30",
+    "Core Rise 30",
+    "Core temperature rise over the first 30 min (minutes 27-33 mean minus minutes 0-3 mean, " +
+      "deg C). Compare at similar power and room temp: falling = heat adaptation or better " +
+      "cooling. CORE-sensor rides over 33 min only.",
+    "°C",
+    "#ff7f0e",
+    CORE_RISE_SCRIPT,
+  ),
+  activityField(
+    "HeatStrainMax",
+    "Heat Strain Max",
+    "Peak one-minute CORE heat strain index (0-10 scale; under ~3 is low strain). CORE-sensor " +
+      "rides only.",
+    "idx",
+    "#8c564b",
+    HEAT_STRAIN_MAX_SCRIPT,
+  ),
+  activityField(
+    "RoomTemp",
+    "Room Temp",
+    "Ride-average device temperature (deg C) — plotted with the core fields so a hot room " +
+      "isn't read as lost heat tolerance. Any ride with 10+ min of temp data.",
+    "°C",
+    "#7f7f7f",
+    ROOM_TEMP_SCRIPT,
   ),
 ];
 
