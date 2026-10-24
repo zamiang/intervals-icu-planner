@@ -17,6 +17,33 @@ const ATHLETE_ID = "0";
 
 type FetchFn = typeof globalThis.fetch;
 
+export interface ClientOptions {
+  timeoutMs?: number;
+  retryDelayMs?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_RETRY_DELAY_MS = 2_000;
+// Ceiling on a server-sent Retry-After, so a bad header can't stall the
+// Monday run for minutes.
+const MAX_RETRY_DELAY_MS = 30_000;
+
+// One retry for transient failures. A POST creates something, and a 5xx or a
+// timeout doesn't say whether it landed — retrying could duplicate a workout —
+// so POSTs only retry a 429, which the server rejected before acting on.
+// GET/PUT/DELETE are idempotent and retry any transient failure.
+function isRetryableStatus(status: number, method: string): boolean {
+  if (status === 429) return true;
+  return method !== "POST" && status >= 500;
+}
+
+function retryAfterMs(res: Response, fallback: number): number {
+  const secs = Number(res.headers?.get?.("retry-after"));
+  return Number.isFinite(secs) && secs > 0 ? Math.min(secs * 1000, MAX_RETRY_DELAY_MS) : fallback;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function parseWellnessEntry(raw: unknown): TrainingLoad {
   if (!raw || typeof raw !== "object") {
     return { ctl: 0, atl: 0, tsb: 0 };
@@ -104,33 +131,79 @@ export interface RideSportSettings {
 export class IntervalsClient {
   private headers: Record<string, string>;
   private fetch: FetchFn;
+  private timeoutMs: number;
+  private retryDelayMs: number;
 
-  constructor(apiKey: string, fetchFn: FetchFn = globalThis.fetch) {
+  constructor(apiKey: string, fetchFn: FetchFn = globalThis.fetch, opts: ClientOptions = {}) {
     const encoded = Buffer.from(`API_KEY:${apiKey}`).toString("base64");
     this.headers = {
       Authorization: `Basic ${encoded}`,
       "Content-Type": "application/json",
     };
     this.fetch = fetchFn;
+    this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.retryDelayMs = opts.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
   }
 
-  async getEvents(oldest: string, newest: string): Promise<IntervalsEvent[]> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/events?oldest=${oldest}&newest=${newest}`;
-    const res = await this.fetch(url, { headers: this.headers });
+  // Every call goes through here: a per-attempt timeout, one retry for
+  // transient failures (see isRetryableStatus), and a uniform error on a
+  // non-2xx response. `path` is relative to BASE_URL.
+  private async request(
+    path: string,
+    init: { method?: "POST" | "PUT" | "DELETE"; body?: unknown } = {},
+  ): Promise<Response> {
+    const method = init.method ?? "GET";
+    const send = async (): Promise<Response> => {
+      try {
+        return await this.fetch(`${BASE_URL}${path}`, {
+          ...(init.method ? { method: init.method } : {}),
+          headers: this.headers,
+          ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+      } catch (err) {
+        if (err instanceof Error && err.name === "TimeoutError") {
+          throw new Error(
+            `Intervals.icu request timed out after ${this.timeoutMs / 1000}s (${method} ${path})`,
+            { cause: err },
+          );
+        }
+        throw err;
+      }
+    };
+
+    let res: Response;
+    try {
+      res = await send();
+    } catch (err) {
+      // Timeout or network failure: the request may have reached the server.
+      if (method === "POST") throw err;
+      await sleep(this.retryDelayMs);
+      res = await send();
+    }
+    if (isRetryableStatus(res.status, method)) {
+      await sleep(retryAfterMs(res, this.retryDelayMs));
+      res = await send();
+    }
     if (!res.ok) {
       throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
     }
+    return res;
+  }
+
+  async getEvents(oldest: string, newest: string): Promise<IntervalsEvent[]> {
+    const res = await this.request(
+      `/athlete/${ATHLETE_ID}/events?oldest=${oldest}&newest=${newest}`,
+    );
     const data = await res.json();
     if (!Array.isArray(data)) return [];
     return data.map(parseEvent).filter((e): e is IntervalsEvent => e !== null);
   }
 
   async getTrainingLoadRange(oldest: string, newest: string): Promise<WellnessEntry[]> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/wellness?oldest=${oldest}&newest=${newest}`;
-    const res = await this.fetch(url, { headers: this.headers });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
+    const res = await this.request(
+      `/athlete/${ATHLETE_ID}/wellness?oldest=${oldest}&newest=${newest}`,
+    );
     const data = await res.json();
     if (!Array.isArray(data)) return [];
     return data.map((entry) => {
@@ -149,11 +222,7 @@ export class IntervalsClient {
   }
 
   async getAthlete(): Promise<AthleteProfile> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}`;
-    const res = await this.fetch(url, { headers: this.headers });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
+    const res = await this.request(`/athlete/${ATHLETE_ID}`);
     const data = (await res.json()) as Record<string, unknown>;
     // Height comes back in metres; every other consumer here works in cm.
     const heightM = typeof data.height === "number" ? data.height : null;
@@ -178,11 +247,7 @@ export class IntervalsClient {
   // HR zones, so this is the authoritative source for what the athlete will
   // ride. Returns null when there is no Ride settings entry at all.
   async getRideSportSettings(): Promise<RideSportSettings | null> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/sport-settings`;
-    const res = await this.fetch(url, { headers: this.headers });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
+    const res = await this.request(`/athlete/${ATHLETE_ID}/sport-settings`);
     const data = await res.json();
     if (!Array.isArray(data)) return null;
     const ride = data.find((s) => {
@@ -204,23 +269,16 @@ export class IntervalsClient {
   // Partial update of a sport-settings entry (e.g. `{ ftp: 232 }` from the
   // eFTP sync) — the API merges the given fields, like updateActivity.
   async updateSportSettings(id: number, fields: Record<string, unknown>): Promise<void> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/sport-settings/${id}`;
-    const res = await this.fetch(url, {
+    await this.request(`/athlete/${ATHLETE_ID}/sport-settings/${id}`, {
       method: "PUT",
-      headers: this.headers,
-      body: JSON.stringify(fields),
+      body: fields,
     });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
   }
 
   async getActivities(oldest: string, newest: string): Promise<Activity[]> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/activities?oldest=${oldest}&newest=${newest}`;
-    const res = await this.fetch(url, { headers: this.headers });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
+    const res = await this.request(
+      `/athlete/${ATHLETE_ID}/activities?oldest=${oldest}&newest=${newest}`,
+    );
     const data = await res.json();
     if (!Array.isArray(data)) return [];
     return data.map((raw) => {
@@ -244,28 +302,18 @@ export class IntervalsClient {
   }
 
   async createEvent(event: IntervalsEvent): Promise<IntervalsEvent> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/events`;
-    const res = await this.fetch(url, {
+    const res = await this.request(`/athlete/${ATHLETE_ID}/events`, {
       method: "POST",
-      headers: this.headers,
-      body: JSON.stringify(event),
+      body: event,
     });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
     return res.json();
   }
 
   async updateEvent(id: number, event: IntervalsEvent): Promise<IntervalsEvent> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/events/${id}`;
-    const res = await this.fetch(url, {
+    const res = await this.request(`/athlete/${ATHLETE_ID}/events/${id}`, {
       method: "PUT",
-      headers: this.headers,
-      body: JSON.stringify(event),
+      body: event,
     });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
     return res.json();
   }
 
@@ -277,11 +325,7 @@ export class IntervalsClient {
   // endpoint returns description: null even when one is set (observed
   // 2026-07-08), which would blind the importers' non-ours overwrite guard.
   async getActivityDescription(id: string): Promise<string> {
-    const url = `${BASE_URL}/activity/${id}`;
-    const res = await this.fetch(url, { headers: this.headers });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
+    const res = await this.request(`/activity/${id}`);
     const data = await res.json();
     const desc = (data as Record<string, unknown> | null)?.description;
     return typeof desc === "string" ? desc : "";
@@ -290,30 +334,17 @@ export class IntervalsClient {
   async updateActivity(id: string, fields: Record<string, unknown>): Promise<void> {
     // Single-activity writes use the non-athlete-scoped /activity/{id} path;
     // the /athlete/{id}/activities/... path only supports GET (PUT → 405).
-    const url = `${BASE_URL}/activity/${id}`;
-    const res = await this.fetch(url, {
-      method: "PUT",
-      headers: this.headers,
-      body: JSON.stringify(fields),
-    });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
+    await this.request(`/activity/${id}`, { method: "PUT", body: fields });
   }
 
   // Create a manual activity (no recording file). Used by the Hevy importer
   // when a strength session was logged in Hevy but never recorded on the
   // watch, so no Companion-synced WeightTraining activity exists to decorate.
   async createManualActivity(activity: Record<string, unknown>): Promise<{ id: string }> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/activities/manual`;
-    const res = await this.fetch(url, {
+    const res = await this.request(`/athlete/${ATHLETE_ID}/activities/manual`, {
       method: "POST",
-      headers: this.headers,
-      body: JSON.stringify(activity),
+      body: activity,
     });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
     const data = (await res.json()) as Record<string, unknown>;
     return { id: typeof data.id === "string" ? data.id : String(data.id ?? "") };
   }
@@ -322,11 +353,7 @@ export class IntervalsClient {
   // activity charts etc. (Settings → Custom). Used by scripts/sync-custom-items.ts
   // to keep the items defined in src/customItems.ts in sync with the account.
   async getCustomItems(): Promise<RemoteCustomItem[]> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/custom-item`;
-    const res = await this.fetch(url, { headers: this.headers });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
+    const res = await this.request(`/athlete/${ATHLETE_ID}/custom-item`);
     const data = await res.json();
     if (!Array.isArray(data)) return [];
     return data
@@ -346,37 +373,20 @@ export class IntervalsClient {
   // flipped in the UI (planSync doesn't diff visibility, so the reassertion
   // only lands when content/description drift triggers an update anyway).
   async createCustomItem(item: CustomItemDef): Promise<void> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/custom-item`;
-    const res = await this.fetch(url, {
+    await this.request(`/athlete/${ATHLETE_ID}/custom-item`, {
       method: "POST",
-      headers: this.headers,
-      body: JSON.stringify({ ...item, visibility: "PRIVATE" }),
+      body: { ...item, visibility: "PRIVATE" },
     });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
   }
 
   async updateCustomItem(id: number, item: CustomItemDef): Promise<void> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/custom-item/${id}`;
-    const res = await this.fetch(url, {
+    await this.request(`/athlete/${ATHLETE_ID}/custom-item/${id}`, {
       method: "PUT",
-      headers: this.headers,
-      body: JSON.stringify({ ...item, visibility: "PRIVATE" }),
+      body: { ...item, visibility: "PRIVATE" },
     });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
   }
 
   async deleteEvent(id: number): Promise<void> {
-    const url = `${BASE_URL}/athlete/${ATHLETE_ID}/events/${id}`;
-    const res = await this.fetch(url, {
-      method: "DELETE",
-      headers: this.headers,
-    });
-    if (!res.ok) {
-      throw new Error(`Intervals.icu API error (${res.status}): ${await res.text()}`);
-    }
+    await this.request(`/athlete/${ATHLETE_ID}/events/${id}`, { method: "DELETE" });
   }
 }
