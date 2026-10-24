@@ -196,7 +196,7 @@ async function main() {
         file === defaultFile
           ? ` — copy scripts/week-plan.example.yaml to ${defaultFile} and edit it`
           : "";
-      throw new Error(`${file} not found${hint}`);
+      throw new Error(`${file} not found${hint}`, { cause: err });
     }
     throw err;
   }
