@@ -782,3 +782,96 @@ describe("IntervalsClient", () => {
     });
   });
 });
+
+describe("IntervalsClient transport", () => {
+  const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
+  const fail = (status: number) => ({ ok: false, status, text: async () => `status ${status}` });
+
+  function setup(timeoutMs = 1_000) {
+    const mockFetch = vi.fn() as ReturnType<typeof vi.fn> & typeof globalThis.fetch;
+    const client = new IntervalsClient("k", mockFetch, { retryDelayMs: 0, timeoutMs });
+    return { mockFetch, client };
+  }
+
+  it("retries a GET once on a 5xx", async () => {
+    const { mockFetch, client } = setup();
+    mockFetch.mockResolvedValueOnce(fail(503)).mockResolvedValueOnce(ok([]));
+
+    await expect(client.getEvents("2026-04-20", "2026-04-26")).resolves.toEqual([]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after one retry", async () => {
+    const { mockFetch, client } = setup();
+    mockFetch.mockResolvedValueOnce(fail(502)).mockResolvedValueOnce(fail(503));
+
+    await expect(client.getEvents("2026-04-20", "2026-04-26")).rejects.toThrow(
+      "Intervals.icu API error (503)",
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a 4xx", async () => {
+    const { mockFetch, client } = setup();
+    mockFetch.mockResolvedValueOnce(fail(422));
+
+    await expect(client.updateSportSettings(1, { ftp: 230 })).rejects.toThrow("(422)");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a PUT after a network error", async () => {
+    const { mockFetch, client } = setup();
+    mockFetch.mockRejectedValueOnce(new TypeError("fetch failed")).mockResolvedValueOnce(ok({}));
+
+    await client.updateActivity("i1", { description: "x" });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  // A create that 5xx'd or dropped may still have landed; a blind retry would
+  // put a duplicate workout on the calendar.
+  it("does not retry a POST on a 5xx or a network error", async () => {
+    const { mockFetch, client } = setup();
+    const event = { start_date_local: "2026-04-20T00:00:00", name: "Ride" };
+
+    mockFetch.mockResolvedValueOnce(fail(500));
+    await expect(client.createEvent(event)).rejects.toThrow("(500)");
+    mockFetch.mockRejectedValueOnce(new TypeError("fetch failed"));
+    await expect(client.createEvent(event)).rejects.toThrow("fetch failed");
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a POST on 429, which the server rejected before acting", async () => {
+    const { mockFetch, client } = setup();
+    mockFetch.mockResolvedValueOnce(fail(429)).mockResolvedValueOnce(ok({ id: 7 }));
+
+    await expect(
+      client.createEvent({ start_date_local: "2026-04-20T00:00:00", name: "Ride" }),
+    ).resolves.toEqual({ id: 7 });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("times out a hung request with a readable error", async () => {
+    const { mockFetch, client } = setup(20);
+    // Never resolves on its own; only the timeout signal ends it.
+    mockFetch.mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) =>
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+        ),
+    );
+
+    await expect(client.getRideSportSettings()).rejects.toThrow(
+      "Intervals.icu request timed out after 0.02s (GET /athlete/0/sport-settings)",
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(2); // a GET gets its one retry
+  });
+
+  it("passes a timeout signal on every request", async () => {
+    const { mockFetch, client } = setup();
+    mockFetch.mockResolvedValueOnce(ok([]));
+
+    await client.getEvents("2026-04-20", "2026-04-26");
+    expect(mockFetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+});
