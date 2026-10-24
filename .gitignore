@@ -1,5 +1,7 @@
 node_modules/
-.env
+# Credentials, including editor backups like .env~ (the repo is public)
+.env*
+!.env.example
 dist/
 
 # Python virtualenv (used by scripts/analyze_fit.py)
