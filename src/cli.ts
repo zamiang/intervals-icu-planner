@@ -385,100 +385,121 @@ export async function pushFuelNotes(
   return { created, failed };
 }
 
-async function runCheck(intervals: IntervalsClient): Promise<number> {
-  const today = todayLocal();
+// The slice of IntervalsClient the commands use. Commands take this rather than
+// the concrete client so tests can drive them end to end with a fake.
+export type PlannerClient = Pick<
+  IntervalsClient,
+  | "getEvents"
+  | "getActivities"
+  | "getTrainingLoadRange"
+  | "getTrainingLoad"
+  | "getRideSportSettings"
+  | "updateSportSettings"
+  | "getAthlete"
+  | "createEvent"
+>;
+
+// Shared by every command: `today` is injected so a run is reproducible, and
+// all output goes through `log` so tests can assert on it.
+export interface CommandOptions {
+  today: string;
+  log?: (msg: string) => void;
+}
+
+export async function runCheck(intervals: PlannerClient, opts: CommandOptions): Promise<number> {
+  const { today } = opts;
+  const log = opts.log ?? console.log;
   let failures = 0;
   const step = async (label: string, fn: () => Promise<unknown>): Promise<void> => {
     try {
       await fn();
-      console.log(`  ok    ${label}`);
+      log(`  ok    ${label}`);
     } catch (err) {
       failures++;
       const msg = err instanceof Error ? err.message : String(err);
-      console.log(`  FAIL  ${label} — ${msg}`);
+      log(`  FAIL  ${label} — ${msg}`);
     }
   };
 
-  console.log("=== Pre-flight check ===");
+  log("=== Pre-flight check ===");
   await step("Intervals.icu wellness fetch", () => intervals.getTrainingLoad(today));
   await step("Intervals.icu ride sport-settings", () => intervals.getRideSportSettings());
-  console.log(failures === 0 ? "All checks passed." : `${failures} check(s) failed.`);
+  log(failures === 0 ? "All checks passed." : `${failures} check(s) failed.`);
   return failures === 0 ? 0 : 1;
 }
 
-async function main() {
-  const rawArgs = process.argv.slice(2);
-  const { command, dryRun, json } = parseArgs(rawArgs);
+export async function runStatus(
+  intervals: PlannerClient,
+  config: Config,
+  opts: CommandOptions & { json: boolean },
+): Promise<void> {
+  const { today, json } = opts;
+  const log = opts.log ?? console.log;
+  const lookbackStr = addLocalDays(today, -28);
+  const weekAgoStr = addLocalDays(today, -7);
+  // Fetch the wider readiness window so status shows the same readiness state
+  // the planner will act on; the ramp is still a trailing-7-day measure.
+  const wellnessStr = addLocalDays(today, -readinessLookbackDays(config));
 
-  const intervalsKey = requireEnv("INTERVALS_API_KEY");
+  const [activityHistory, wellnessRange, rideSettings] = await Promise.all([
+    intervals.getActivities(activityHistoryStart(today, lookbackStr, config), today),
+    intervals.getTrainingLoadRange(wellnessStr, today),
+    intervals.getRideSportSettings(),
+  ]);
+  const activities = sinceDate(activityHistory, lookbackStr);
+  const ftp = rideSettings?.ftp ?? null;
+  const eftp = latestEftp(activities);
+  const load = latestTrainingLoad(wellnessRange, today);
+  const distribution = computeDistribution(activities);
+  const rampRatePct = computeWeeklyRampPct(wellnessRange.filter((e) => e.date >= weekAgoStr));
+  const readiness = computeReadiness(wellnessRange, config, activityHistory);
 
-  const intervals = new IntervalsClient(intervalsKey);
-
-  if (command === "check") {
-    const code = await runCheck(intervals);
-    process.exit(code);
-  }
-
-  const config = await loadConfig("config.yaml");
-
-  if (command === "status") {
-    const today = todayLocal();
-    const lookbackStr = addLocalDays(today, -28);
-    const weekAgoStr = addLocalDays(today, -7);
-    // Fetch the wider readiness window so status shows the same readiness state
-    // the planner will act on; the ramp is still a trailing-7-day measure.
-    const wellnessStr = addLocalDays(today, -readinessLookbackDays(config));
-
-    const [activityHistory, wellnessRange, rideSettings] = await Promise.all([
-      intervals.getActivities(activityHistoryStart(today, lookbackStr, config), today),
-      intervals.getTrainingLoadRange(wellnessStr, today),
-      intervals.getRideSportSettings(),
-    ]);
-    const activities = sinceDate(activityHistory, lookbackStr);
-    const ftp = rideSettings?.ftp ?? null;
-    const eftp = latestEftp(activities);
-    const load = latestTrainingLoad(wellnessRange, today);
-    const distribution = computeDistribution(activities);
-    const rampRatePct = computeWeeklyRampPct(wellnessRange.filter((e) => e.date >= weekAgoStr));
-    const readiness = computeReadiness(wellnessRange, config, activityHistory);
-
-    if (json) {
-      const deficits = Object.fromEntries(
-        ZONES.map((z) => [z, POLARIZED_TARGETS[z] - distribution[z]]),
-      );
-      const out = {
-        training_load: load,
-        icu_ftp: ftp,
-        icu_eftp: eftp ?? null,
-        readiness,
-        block: activeBlock(today, config.blocks) ?? null,
-        zones: { distribution, targets: POLARIZED_TARGETS, deficits },
-        ramp: {
-          weekly_pct: rampRatePct ?? null,
-          threshold_pct: config.scheduling.max_weekly_ramp_pct,
-          exceeds: rampGuardTriggered(rampRatePct, config),
-        },
-      };
-      console.log(JSON.stringify(out, null, 2));
-      return;
-    }
-
-    console.log("=== Training Status ===");
-    console.log(`CTL (Fitness):  ${load.ctl}`);
-    console.log(`ATL (Fatigue):  ${load.atl}`);
-    console.log(`TSB (Form):     ${load.tsb}`);
-    console.log(`Readiness:      ${formatReadiness(readiness)}`);
-    console.log(`Block:          ${formatBlock(today, config, load.ctl)}`);
-    console.log();
-    console.log(`FTP:    ${ftp !== null ? `${ftp}W` : "not set"}  (Intervals.icu)`);
-    console.log(
-      `eFTP:   ${eftp !== undefined ? `${Math.round(eftp)}W` : "n/a"}  (rolling estimate${config.ftp_sync.enabled ? "; plan auto-applies" : ""})`,
+  if (json) {
+    const deficits = Object.fromEntries(
+      ZONES.map((z) => [z, POLARIZED_TARGETS[z] - distribution[z]]),
     );
+    const out = {
+      training_load: load,
+      icu_ftp: ftp,
+      icu_eftp: eftp ?? null,
+      readiness,
+      block: activeBlock(today, config.blocks) ?? null,
+      zones: { distribution, targets: POLARIZED_TARGETS, deficits },
+      ramp: {
+        weekly_pct: rampRatePct ?? null,
+        threshold_pct: config.scheduling.max_weekly_ramp_pct,
+        exceeds: rampGuardTriggered(rampRatePct, config),
+      },
+    };
+    log(JSON.stringify(out, null, 2));
     return;
   }
 
-  // plan command
-  const today = todayLocal();
+  log("=== Training Status ===");
+  log(`CTL (Fitness):  ${load.ctl}`);
+  log(`ATL (Fatigue):  ${load.atl}`);
+  log(`TSB (Form):     ${load.tsb}`);
+  log(`Readiness:      ${formatReadiness(readiness)}`);
+  log(`Block:          ${formatBlock(today, config, load.ctl)}`);
+  log("");
+  log(`FTP:    ${ftp !== null ? `${ftp}W` : "not set"}  (Intervals.icu)`);
+  log(
+    `eFTP:   ${eftp !== undefined ? `${Math.round(eftp)}W` : "n/a"}  (rolling estimate${config.ftp_sync.enabled ? "; plan auto-applies" : ""})`,
+  );
+}
+
+// Returns the process exit code: 1 when any workout failed to push.
+export async function runPlan(
+  intervals: PlannerClient,
+  config: Config,
+  opts: CommandOptions & {
+    dryRun: boolean;
+    // Read by the caller (main) so tests don't pick up the developer's own file.
+    localAthlete: Partial<AthleteProfile> | null;
+  },
+): Promise<number> {
+  const { today, dryRun, localAthlete } = opts;
+  const log = opts.log ?? console.log;
   const endStr = addLocalDays(today, 6);
   const raceHorizonStr = addLocalDays(today, 364);
   const lookbackStr = addLocalDays(today, -28);
@@ -500,10 +521,6 @@ async function main() {
   // filters on *start* date only, so a holiday that began weeks ago and still
   // covers this week would be invisible to the planning-window fetch.
   const holidayLookbackStr = addLocalDays(today, -config.holidays.lookback_days);
-
-  // Read before the fan-out: whether the profile endpoint is called at all
-  // depends on what the local file already supplies.
-  const localAthlete = await loadLocalAthlete();
 
   const [
     events,
@@ -527,7 +544,7 @@ async function main() {
     config.fueling.enabled && !isCompleteProfile(localAthlete)
       ? intervals.getAthlete().catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
-          console.log(`Fuelling: could not read the Intervals.icu profile — ${msg}`);
+          log(`Fuelling: could not read the Intervals.icu profile — ${msg}`);
           return null;
         })
       : Promise.resolve(null),
@@ -541,6 +558,7 @@ async function main() {
   // placeholders render with. Dry runs preview the update without writing.
   const renderValues = await syncFtp(intervals, rideSettings, activities, config.ftp_sync, {
     dryRun,
+    log,
   });
 
   const zoneDistribution = computeDistribution(activities);
@@ -586,14 +604,14 @@ async function main() {
     very_fatigued: "very fatigued — dropped sweet-spot, reduced weights",
   };
 
-  console.log("=== Weekly Plan ===");
-  console.log(`TSB ${load.tsb.toFixed(1)} (${fatigueLabel[fatigue] ?? fatigue})`);
-  console.log(`Block: ${formatBlock(today, config, load.ctl, windowTss(planned, events, today))}`);
+  log("=== Weekly Plan ===");
+  log(`TSB ${load.tsb.toFixed(1)} (${fatigueLabel[fatigue] ?? fatigue})`);
+  log(`Block: ${formatBlock(today, config, load.ctl, windowTss(planned, events, today))}`);
   if (readiness.status === "suppressed") {
-    console.log(`READINESS: ${readiness.reason} — week downgraded one fatigue tier`);
+    log(`READINESS: ${readiness.reason} — week downgraded one fatigue tier`);
   }
   if (rampGuardTriggered(rampRatePct, config) && rampRatePct !== undefined) {
-    console.log(
+    log(
       `WARNING: CTL ramp +${rampRatePct.toFixed(1)}%/wk > ${config.scheduling.max_weekly_ramp_pct}% threshold — hard rides downgraded`,
     );
   }
@@ -607,7 +625,7 @@ async function main() {
           .map((e) => e.name),
       ),
     ].join(", ");
-    console.log(
+    log(
       `HOLIDAY: ${names} — ${holidaySet.size} day(s) this week ${
         config.holidays.mode === "placeholder"
           ? "get a cross-training placeholder"
@@ -615,42 +633,70 @@ async function main() {
       }`,
     );
   }
-  console.log();
-  console.log(formatPlan(planned));
-  console.log(`\nWeekly planned load: ${weeklyPlannedTss(planned)} TSS`);
-  console.log();
+  log("");
+  log(formatPlan(planned));
+  log(`\nWeekly planned load: ${weeklyPlannedTss(planned)} TSS`);
+  log("");
 
   // Daily fuelling notes. Built from the same `planned` week so the
   // prescription can't drift from the plan, and skipped entirely when the block
   // is off or its window has passed. Days that already carry a fuel note are
   // dropped so re-running `plan` is idempotent — unlike workouts, a NOTE
   // doesn't lock its day, so nothing else prevents a duplicate.
-  const fuelNotes = buildFuelNotes(config, planned, wellnessRange, athlete, renderValues.ftp, {
-    today,
-    existing: events,
-  });
+  const fuelNotes = buildFuelNotes(
+    config,
+    planned,
+    wellnessRange,
+    athlete,
+    renderValues.ftp,
+    { today, existing: events },
+    log,
+  );
   if (fuelNotes.length > 0) {
-    console.log(`Fuelling: ${fuelNotes.length} daily note(s) — ${fuelNotes[0].name}`);
+    log(`Fuelling: ${fuelNotes.length} daily note(s) — ${fuelNotes[0].name}`);
   }
 
   if (dryRun) {
-    console.log("(dry run — nothing pushed to Intervals.icu)");
-    return;
+    log("(dry run — nothing pushed to Intervals.icu)");
+    return 0;
   }
 
-  console.log("Pushing to Intervals.icu...");
-  const { created, failed } = await pushPlan(intervals, planned);
-  await pushFuelNotes(intervals, fuelNotes);
+  log("Pushing to Intervals.icu...");
+  const { created, failed } = await pushPlan(intervals, planned, log);
+  await pushFuelNotes(intervals, fuelNotes, log);
   if (failed.length === 0) {
-    console.log(`Done. Created ${created.length} event(s).`);
+    log(`Done. Created ${created.length} event(s).`);
   } else {
-    console.log(
+    log(
       `Created ${created.length}, failed ${failed.length}. ` +
         `Re-run to retry fully-failed days. A failed session on a day that ` +
         `partially landed won't regenerate — re-add it by hand (see push-week).`,
     );
-    process.exitCode = 1;
+    return 1;
   }
+  return 0;
+}
+
+async function main() {
+  const { command, dryRun, json } = parseArgs(process.argv.slice(2));
+  const intervals = new IntervalsClient(requireEnv("INTERVALS_API_KEY"));
+  const today = todayLocal();
+
+  if (command === "check") {
+    process.exit(await runCheck(intervals, { today }));
+  }
+
+  const config = await loadConfig("config.yaml");
+
+  if (command === "status") {
+    await runStatus(intervals, config, { today, json });
+    return;
+  }
+
+  // Read before the fan-out: whether the profile endpoint is called at all
+  // depends on what the local file already supplies.
+  const localAthlete = await loadLocalAthlete();
+  process.exitCode = await runPlan(intervals, config, { today, dryRun, localAthlete });
 }
 
 // Only run main when executed directly (not when imported by tests)
