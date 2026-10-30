@@ -378,8 +378,8 @@ readiness:
 # enabled: false to turn it off immediately.
 fueling:
   enabled: true
-  start_date: "2026-09-28" # race dropped 2026-09-18; held so a creatine load (started ~9/19) lands its water weight before the baseline weigh-in
-  end_date: "2026-12-06" # 10 weeks: 9 deficit weeks + one maintenance week
+  start_date: "2026-09-28"
+  end_date: "2026-12-06" # 10 weeks. Every week runs the deficit: there is no built-in maintenance week.
   daily_deficit_kcal: 650
   fuel_day_addback_kcal: 400
   deficit_day_extra_kcal: 150

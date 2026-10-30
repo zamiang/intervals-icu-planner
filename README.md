@@ -92,8 +92,8 @@ Workout definitions and scheduling rules live in `config.yaml`:
 npm run check                     # smoke-test Intervals.icu credentials
 npm run status                    # show current CTL/ATL/TSB, FTP/eFTP, and readiness
 npm run status -- --json          # same data as JSON, including zone mix and ramp
-npm run plan -- --dry-run         # print the week's plan without pushing
-npm run plan                      # generate and push the plan to Intervals.icu
+npm run plan                      # print the week's plan without pushing
+npm run plan -- --apply           # generate and push the plan to Intervals.icu
 ```
 
 The `plan` command fetches existing Intervals.icu events for the next 7 days
@@ -109,8 +109,8 @@ tuned weeks tend to carry personal health and travel notes), edit it, and push
 it directly:
 
 ```sh
-npm run push-week -- --dry-run               # preview, write nothing
-npm run push-week                            # push scripts/week-plan.yaml
+npm run push-week                            # preview, write nothing
+npm run push-week -- --apply                 # push scripts/week-plan.yaml
 npm run push-week -- --start 2026-06-08      # anchor to a specific Monday
 npm run push-week -- --file other-plan.yaml  # use a different plan file
 npm run events                               # list calendar events (next 7 days)
@@ -250,8 +250,8 @@ structure plus short per-step labels. The builder lives in `src/workout.ts`.
 sport-settings FTP, so both the `% FTP` structured steps and the prose watt
 callouts track current fitness with no hand edits after each test. A single
 jump bigger than `ftp_sync.max_change_pct` is refused as bad data — apply it
-manually in Intervals.icu if it's real. `--dry-run` previews the update
-without writing; disable entirely with `ftp_sync.enabled: false`.
+manually in Intervals.icu if it's real. Without `--apply` the update is
+previewed, not written; disable entirely with `ftp_sync.enabled: false`.
 
 Prose descriptions in `config.yaml` and the week plan file never
 hardcode watts: they carry placeholders rendered at push time from the synced

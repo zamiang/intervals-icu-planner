@@ -1,10 +1,10 @@
 // Push an editable, hand-tuned week to the Intervals.icu calendar.
 //
-//   npm run push-week -- --dry-run                 # preview, write nothing
-//   npm run push-week                              # push scripts/week-plan.yaml
-//   npm run push-week -- --start 2026-06-08        # anchor to a specific Monday
-//   npm run push-week -- --file other-plan.yaml    # use a different plan file
-//   npm run push-week -- --replace                 # overwrite existing events
+//   npm run push-week                                  # preview, write nothing
+//   npm run push-week -- --apply                       # push scripts/week-plan.yaml
+//   npm run push-week -- --start 2026-06-08            # anchor to a specific Monday
+//   npm run push-week -- --file other-plan.yaml        # use a different plan file
+//   npm run push-week -- --apply --replace             # overwrite existing events
 //
 // Use this when the generated `npm run plan` isn't quite what you want and you
 // want to schedule a specific week by hand. The plan file format is documented
@@ -179,7 +179,9 @@ export function planPushActions(
 }
 
 async function main() {
-  const dryRun = process.argv.includes("--dry-run");
+  // Preview unless --apply, like every other write command. --dry-run is the
+  // default and accepted only so old invocations keep working.
+  const dryRun = !process.argv.includes("--apply");
   const replace = process.argv.includes("--replace");
   const defaultFile = "scripts/week-plan.yaml";
   const file = parseFlag("file") ?? defaultFile;
@@ -289,7 +291,7 @@ async function main() {
       console.log(`  created ${date} — ${e.name} (${e.type}${load})`);
     }
   }
-  console.log(dryRun ? "Dry run — nothing pushed." : "Done.");
+  console.log(dryRun ? "Dry run — nothing pushed. Re-run with --apply to push." : "Done.");
 }
 
 const isMain =

@@ -10,7 +10,7 @@
 #
 # By default the week is anchored to the upcoming Monday. Override with
 #   npm run push-week -- --start 2026-07-06
-# Preview without writing to Intervals.icu with --dry-run. Days that already
+# Runs preview by default; add --apply to write to Intervals.icu. Days that already
 # have a calendar event are skipped so re-running never duplicates.
 #
 # Watts/HR in descriptions render at push time from live Intervals.icu

@@ -23,27 +23,40 @@ import type {
 describe("parseArgs", () => {
   it("parses 'plan' command", () => {
     const result = parseArgs(["plan"]);
-    expect(result).toEqual({ command: "plan", dryRun: false, json: false });
+    expect(result).toEqual({ command: "plan", apply: false, json: false });
   });
 
-  it("parses 'plan --dry-run' command", () => {
+  it("parses 'plan --apply' command", () => {
+    const result = parseArgs(["plan", "--apply"]);
+    expect(result).toEqual({ command: "plan", apply: true, json: false });
+  });
+
+  it("still accepts --dry-run, which is the default", () => {
     const result = parseArgs(["plan", "--dry-run"]);
-    expect(result).toEqual({ command: "plan", dryRun: true, json: false });
+    expect(result).toEqual({ command: "plan", apply: false, json: false });
+  });
+
+  it("rejects --apply with --dry-run", () => {
+    expect(() => parseArgs(["plan", "--apply", "--dry-run"])).toThrow("mutually exclusive");
+  });
+
+  it("rejects an unknown flag rather than treating it as a preview", () => {
+    expect(() => parseArgs(["plan", "--aply"])).toThrow("Unknown flag: --aply");
   });
 
   it("parses 'status' command", () => {
     const result = parseArgs(["status"]);
-    expect(result).toEqual({ command: "status", dryRun: false, json: false });
+    expect(result).toEqual({ command: "status", apply: false, json: false });
   });
 
   it("parses 'status --json' command", () => {
     const result = parseArgs(["status", "--json"]);
-    expect(result).toEqual({ command: "status", dryRun: false, json: true });
+    expect(result).toEqual({ command: "status", apply: false, json: true });
   });
 
   it("parses 'check' command", () => {
     const result = parseArgs(["check"]);
-    expect(result).toEqual({ command: "check", dryRun: false, json: false });
+    expect(result).toEqual({ command: "check", apply: false, json: false });
   });
 
   it("throws on unknown command", () => {
