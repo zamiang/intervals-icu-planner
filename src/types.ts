@@ -202,6 +202,7 @@ export interface Activity {
   start_date: string; // UTC ISO timestamp ("...Z"); used to match against external logs (e.g. Hevy) without timezone guesswork
   type: string; // "Ride", "VirtualRide", "Run", etc.
   icu_training_load: number; // TSS
+  moving_time?: number; // seconds
   icu_intensity: number | null; // IF as a fraction, e.g. 0.89 (the API returns a percentage; normalized on read)
   icu_zone_times: number[] | null; // seconds in Z1..Z7 (normalized from the API's object form on read)
   icu_ss_time: number | null; // seconds in the native sweet-spot ("SS") band; overlaps Z3/Z4, so not part of icu_zone_times

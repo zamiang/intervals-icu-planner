@@ -61,7 +61,7 @@ export interface RenderTargetValues {
 
 // Run the eFTP sync against Intervals.icu and return the FTP/LTHR that prose
 // placeholders should render with. On apply, the returned FTP is the eFTP —
-// also under --dry-run (no write happens, but the preview shows the watts a
+// also in a dry run (no write happens, but the preview shows the watts a
 // real run would push). Shared by `plan` (cli.ts) and push-week.
 export async function syncFtp(
   client: { updateSportSettings(id: number, fields: Record<string, unknown>): Promise<void> },
