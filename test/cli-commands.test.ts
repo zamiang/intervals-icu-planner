@@ -113,7 +113,9 @@ describe("runPlan", () => {
     expect(client.updateSportSettings).not.toHaveBeenCalled();
     expect(out.text()).toContain("=== Weekly Plan ===");
     expect(out.text()).toContain("would update Intervals.icu FTP 230W -> 240W");
-    expect(out.text()).toContain("(dry run — nothing pushed to Intervals.icu)");
+    expect(out.text()).toContain(
+      "(dry run — nothing pushed to Intervals.icu; re-run with --apply to push)",
+    );
   });
 
   it("pushes every non-rest workout inside the 7-day window", async () => {

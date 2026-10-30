@@ -95,12 +95,16 @@ export type Command = "plan" | "status" | "check";
 
 interface ParsedArgs {
   command: Command;
-  dryRun: boolean;
+  apply: boolean;
   json: boolean;
 }
 
 const VALID_COMMANDS: Command[] = ["plan", "status", "check"];
+// --dry-run is the default and accepted only so old invocations keep working.
+const VALID_FLAGS = ["--apply", "--dry-run", "--json"];
 
+// Every write command in this repo previews by default and writes only with
+// --apply, so a forgotten or mistyped flag can never touch the calendar.
 export function parseArgs(args: string[]): ParsedArgs {
   if (args.length === 0) {
     throw new Error("No command provided. Usage: intervals-icu-planner <plan|status|check>");
@@ -113,9 +117,14 @@ export function parseArgs(args: string[]): ParsedArgs {
     );
   }
 
-  const dryRun = args.includes("--dry-run");
-  const json = args.includes("--json");
-  return { command, dryRun, json };
+  const flags = args.slice(1);
+  const unknown = flags.find((f) => !VALID_FLAGS.includes(f));
+  if (unknown) throw new Error(`Unknown flag: ${unknown}. Valid: ${VALID_FLAGS.join(", ")}`);
+  const apply = flags.includes("--apply");
+  if (apply && flags.includes("--dry-run")) {
+    throw new Error("--apply and --dry-run are mutually exclusive");
+  }
+  return { command, apply, json: flags.includes("--json") };
 }
 
 // One-line season summary: the active block, its week, its zone focus, and —
@@ -657,7 +666,7 @@ export async function runPlan(
   }
 
   if (dryRun) {
-    log("(dry run — nothing pushed to Intervals.icu)");
+    log("(dry run — nothing pushed to Intervals.icu; re-run with --apply to push)");
     return 0;
   }
 
@@ -678,7 +687,7 @@ export async function runPlan(
 }
 
 async function main() {
-  const { command, dryRun, json } = parseArgs(process.argv.slice(2));
+  const { command, apply, json } = parseArgs(process.argv.slice(2));
   const intervals = new IntervalsClient(requireEnv("INTERVALS_API_KEY"));
   const today = todayLocal();
 
@@ -696,7 +705,7 @@ async function main() {
   // Read before the fan-out: whether the profile endpoint is called at all
   // depends on what the local file already supplies.
   const localAthlete = await loadLocalAthlete();
-  process.exitCode = await runPlan(intervals, config, { today, dryRun, localAthlete });
+  process.exitCode = await runPlan(intervals, config, { today, dryRun: !apply, localAthlete });
 }
 
 // Only run main when executed directly (not when imported by tests)

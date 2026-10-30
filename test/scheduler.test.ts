@@ -1849,6 +1849,93 @@ describe("weekday_max_minutes", () => {
       expect(result.some((w) => w.type === "rest")).toBe(true);
     });
 
+    it("keeps the rest day when a fixed ride has no planned load", () => {
+      // Without its load this week reads short, though the ride may hold CTL.
+      const events = mostlyFilled(100).map((e) =>
+        e.name === "Sweet Spot Intervals" ? { ...e, icu_training_load: undefined } : e,
+      );
+      const result = schedule(
+        makeInput({ ...week, existingEvents: events, trainingLoad: load(0) }),
+      );
+      expect(result.find((w) => w.date === "2026-10-29")!.type).toBe("rest");
+    });
+
+    it("keeps the rest day when a fixed day is a completed ride with no event", () => {
+      const result = schedule(
+        makeInput({
+          ...week,
+          existingEvents: mostlyFilled(48).filter(
+            (e) => !e.start_date_local.startsWith("2026-10-27"),
+          ),
+          completedDates: ["2026-10-27"],
+          trainingLoad: load(0),
+        }),
+      );
+      expect(result.find((w) => w.date === "2026-10-29")!.type).toBe("rest");
+    });
+
+    it("does not count holiday days as fixed when deciding to ride the rest day", () => {
+      // 2 fixed days against 3 open. Counting the 2 holiday days as fixed would
+      // make the week look mostly filled and short, and ride the rest day.
+      const result = schedule(
+        makeInput({
+          ...week,
+          existingEvents: [
+            ride("2026-10-26", "Sweet Spot Intervals", 48),
+            ride("2026-10-27", "Cyclist Strength Routine", 0, "WeightTraining"),
+          ],
+          holidayDates: ["2026-10-28", "2026-10-30"],
+          trainingLoad: load(0),
+        }),
+      );
+      expect(result.some((w) => w.type === "rest")).toBe(true);
+    });
+
+    it("gives a very fatigued week the long ride when day 0 is open for its rest", () => {
+      // Sat is open as day 0 of a weekend-start window, so resting elsewhere is
+      // possible and the long ride wins.
+      const result = schedule(
+        makeInput({
+          startDate: "2026-10-31",
+          config: capCfg(120),
+          existingEvents: [],
+          trainingLoad: load(-25),
+        }),
+      );
+      expect(result.some((w) => w.name === "Long Endurance Ride")).toBe(true);
+      expect(result.some((w) => w.type === "rest")).toBe(true);
+    });
+
+    it("keeps the only weekend day for the long ride over strength", () => {
+      // Sun is the only day that fits the long ride and strength is still owed.
+      const events = [
+        ride("2026-10-26", "Sweet Spot Intervals", 63),
+        ride("2026-10-27", "Easy Ride", 48),
+        ride("2026-10-29", "Easy Ride", 48),
+        ride("2026-10-31", "Easy Ride", 48),
+      ];
+      const result = schedule(
+        makeInput({ ...week, existingEvents: events, trainingLoad: load(0) }),
+      );
+      expect(result.find((w) => w.date === "2026-11-01")!.name).toBe("Long Endurance Ride");
+      expect(result.some((w) => w.date === "2026-11-01" && w.type === "weights")).toBe(false);
+    });
+
+    it("keeps the only weekend day for the long ride over the quality session", () => {
+      const events = [
+        ride("2026-10-26", "Easy Ride", 48),
+        ride("2026-10-27", "Cyclist Strength Routine", 0, "WeightTraining"),
+        ride("2026-10-28", "Easy Ride", 48),
+        ride("2026-10-29", "Easy Ride", 48),
+        ride("2026-10-30", "Cyclist Strength Routine", 0, "WeightTraining"),
+        ride("2026-10-31", "Easy Ride", 48),
+      ];
+      const result = schedule(
+        makeInput({ ...week, existingEvents: events, trainingLoad: load(0) }),
+      );
+      expect(result.map((w) => [w.date, w.name])).toEqual([["2026-11-01", "Long Endurance Ride"]]);
+    });
+
     it("keeps the rest day when most of the window is still open", () => {
       const result = schedule(
         makeInput({

@@ -11,8 +11,8 @@ npm run check          # smoke-test your credentials
 ```
 
 Requires Node.js 22.12+ (Vitest 5). You'll want your own [Intervals.icu](https://intervals.icu)
-account to test against — every write command supports `--dry-run`, so you can
-develop without touching your real calendar.
+account to test against — every write command previews by default and only
+writes with `--apply`, so you can develop without touching your real calendar.
 
 ## Development workflow
 

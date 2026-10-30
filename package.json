@@ -30,17 +30,17 @@
     "node": ">=22.12"
   },
   "dependencies": {
-    "dotenv": "18.0.1",
+    "dotenv": "18.0.9",
     "yaml": "2.9.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@types/node": "26.6.2",
-    "eslint": "10.11.0",
-    "prettier": "3.9.8",
-    "tsx": "4.23.13",
+    "@types/node": "26.6.6",
+    "eslint": "10.13.0",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.70.0",
+    "typescript-eslint": "8.72.1",
     "vitest": "5.0.5"
   }
 }

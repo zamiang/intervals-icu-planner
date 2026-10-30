@@ -354,6 +354,18 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     });
   }
 
+  // The weekly long ride only fits days under the weekday cap, and it is placed
+  // last, so without this a quality or strength session could take the only day
+  // left for it. A very fatigued week doesn't protect it: that week is shedding
+  // load anyway.
+  const longMinutes = longRideMinutes(step, config);
+  const fitsLongRide = (i: number): boolean => dayCapMinutes(dates[i], config) >= longMinutes;
+  const reservedForLongRide = (i: number): boolean =>
+    !hasExistingLongRide &&
+    !veryFatigued &&
+    fitsLongRide(i) &&
+    available.filter((j) => isEmpty(j) && fitsLongRide(j)).length === 1;
+
   // Phase 1: sweet-spot (mid-week), unless very fatigued or the calendar
   // already holds one this week.
   //
@@ -370,7 +382,9 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     intensity === "moderate" && existingHardRides === 0 ? hardZoneFocusOn(startDate, config) : null;
   let lcIdx: number | undefined;
   if (!veryFatigued && existingSweetSpots === 0) {
-    const lcCandidates = available.filter((i) => isEmpty(i) && !wouldCreateBackToBack(i));
+    const lcCandidates = available.filter(
+      (i) => isEmpty(i) && !wouldCreateBackToBack(i) && !reservedForLongRide(i),
+    );
     lcIdx = lcCandidates.find((i) => i >= 2 && i <= 4) ?? lcCandidates[0];
     if (lcIdx !== undefined && moderateFocus) {
       usedHardZones.add(moderateFocus);
@@ -404,6 +418,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
       if (hardCyclingTargets.size + existingHardRides >= scheduling.hard_cycling_days) break;
       if (!isEmpty(i)) continue;
       if (wouldCreateBackToBack(i)) continue;
+      if (reservedForLongRide(i)) continue;
       // Spacing: hard cycling days follow min_weight_gap_days from each other
       // and from the sweet-spot day, so co-located weights get proper rest.
       const existingHardSpots = [lcIdx, ...hardCyclingTargets].filter(
@@ -453,6 +468,16 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
       if (weightSlots.length >= weightSessionsRemaining) break;
       if (wouldCreateBackToBack(i)) continue;
       if (!respectsWeightGap(i, weightSlots)) continue;
+      // weightSlots aren't on the plan yet, so count them as taken here.
+      if (
+        !hasExistingLongRide &&
+        !veryFatigued &&
+        fitsLongRide(i) &&
+        available.filter((j) => isEmpty(j) && fitsLongRide(j) && !weightSlots.includes(j))
+          .length === 1
+      ) {
+        continue;
+      }
       weightSlots.push(i);
     }
   }
@@ -477,7 +502,6 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // it. A run that finds Mon-Fri already filled would otherwise rest on Sunday
   // and lose the week's biggest ride. Only a very fatigued week with no day-0
   // rest keeps it, since that rest would be its only one.
-  const longMinutes = longRideMinutes(step, config);
   const pickRestDay = (candidates: number[]): number | undefined =>
     candidates.find((i) => isHardDay(i - 1)) ?? candidates[candidates.length - 1];
   const restCandidates = available.filter((i) => isEmpty(i));
@@ -536,12 +560,29 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // the week, this run can't make up a shortfall later, so the rest day has to
   // be affordable against the whole week. If existing events plus this plan fall
   // short of holding CTL (7 x CTL), ride it. Weeks that are mostly still open
-  // keep their rest, and so does a back-off week, whatever the load.
-  const fixedDays = dates.filter((d) => occupiedDates.has(d)).length;
+  // keep their rest, and so does a back-off week, whatever the load. So does a
+  // week where a fixed day's load is unknown (a ride with no planned TSS, or a
+  // completed day with no event), since it would read as 0 and look short.
+  // Holiday days deliberately don't count as fixed: a trip is a reason for a
+  // light week, not a shortfall to ride off.
+  const fixedDays = dates.filter((d) => occupiedDates.has(d));
+  const loadUnknown = (d: string): boolean => {
+    const onDay = existingEvents.filter((e) => dayKey(e.start_date_local) === d);
+    return (
+      onDay.length === 0 ||
+      onDay.some(
+        (e) =>
+          e.category === "WORKOUT" &&
+          typeof e.icu_training_load !== "number" &&
+          classifyExistingEvent(e) !== "weights",
+      )
+    );
+  };
   if (
     restDay &&
     !backOff &&
-    fixedDays > available.length &&
+    fixedDays.length > available.length &&
+    !fixedDays.some(loadUnknown) &&
     windowTss(out, existingEvents, startDate, days) < 7 * trainingLoad.ctl
   ) {
     const lt = config.load_targets;
