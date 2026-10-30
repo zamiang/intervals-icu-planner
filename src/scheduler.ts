@@ -471,17 +471,33 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // Phase 4: rest day — placed after the hardest cluster. Skipped if day 0
   // rest already exists and no natural "after hard" slot is better; in that
   // case we still try to find a second rest for recovery from the weights.
+  //
+  // The rest never takes the last open day that fits the long ride while the
+  // week still lacks one: it moves to another open day, or the week goes without
+  // it. A run that finds Mon-Fri already filled would otherwise rest on Sunday
+  // and lose the week's biggest ride. Only a very fatigued week with no day-0
+  // rest keeps it, since that rest would be its only one.
+  const longMinutes = longRideMinutes(step, config);
+  const pickRestDay = (candidates: number[]): number | undefined =>
+    candidates.find((i) => isHardDay(i - 1)) ?? candidates[candidates.length - 1];
   const restCandidates = available.filter((i) => isEmpty(i));
-  const restIdx =
-    restCandidates.find((i) => isHardDay(i - 1)) ?? restCandidates[restCandidates.length - 1];
+  let restIdx = pickRestDay(restCandidates);
+  if (!hasExistingLongRide && !(veryFatigued && !available.includes(0))) {
+    const longDays = restCandidates.filter((i) => dayCapMinutes(dates[i], config) >= longMinutes);
+    if (longDays.length === 1 && longDays[0] === restIdx) {
+      restIdx = pickRestDay(restCandidates.filter((i) => i !== restIdx));
+    }
+  }
+  let restDay: PlannedWorkout | undefined;
   if (restIdx !== undefined) {
-    plan[restIdx].push({
+    restDay = {
       date: dates[restIdx],
       type: "rest",
       name: "Rest Day",
       description: "Recovery — no planned workout",
       intensity: "easy",
-    });
+    };
+    plan[restIdx].push(restDay);
   }
 
   // Phase 5: fill every remaining empty day with an easy Zone 2 ride. Hard
@@ -514,12 +530,31 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     out.push(...sorted);
   }
 
-  const longIdx = attachLoadTargets(
-    out,
-    config,
-    hasExistingLongRide,
-    longRideMinutes(step, config),
-  );
+  const longIdx = attachLoadTargets(out, config, hasExistingLongRide, longMinutes);
+
+  // Partial window: when earlier runs or hand-added events already fix most of
+  // the week, this run can't make up a shortfall later, so the rest day has to
+  // be affordable against the whole week. If existing events plus this plan fall
+  // short of holding CTL (7 x CTL), ride it. Weeks that are mostly still open
+  // keep their rest, and so does a back-off week, whatever the load.
+  const fixedDays = dates.filter((d) => occupiedDates.has(d)).length;
+  if (
+    restDay &&
+    !backOff &&
+    fixedDays > available.length &&
+    windowTss(out, existingEvents, startDate, days) < 7 * trainingLoad.ctl
+  ) {
+    const lt = config.load_targets;
+    const durationMin = Math.min(lt.easy_minutes, dayCapMinutes(restDay.date, config));
+    Object.assign(restDay, {
+      type: "cycling",
+      name: "Easy Ride",
+      description: buildCyclingDescription("easy"),
+      durationMin,
+      intensityFactor: lt.easy_if,
+      load: Math.round((durationMin / 60) * lt.easy_if * lt.easy_if * 100),
+    });
+  }
 
   // Season floor: a block's ctl_floor lengthens easy rides when the week as
   // planned would end with CTL below it. Only on weeks the guards call fresh
