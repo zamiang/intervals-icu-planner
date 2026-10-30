@@ -3,9 +3,9 @@
 // Usage: npx tsx scripts/weekly-review.ts [weeks]   (default 8)
 import { config as loadEnv } from "dotenv";
 loadEnv({ quiet: true });
-import { addLocalDays, todayLocal } from "../src/dates.js";
+import { todayLocal } from "../src/dates.js";
 import { IntervalsClient } from "../src/intervals.js";
-import { formatWeeklyReview, summarizeWeeks } from "../src/weeklyReview.js";
+import { formatWeeklyReview, reviewRange, summarizeWeeks } from "../src/weeklyReview.js";
 
 async function main(): Promise<void> {
   const weeksBack = Number(process.argv[2] ?? 8);
@@ -16,14 +16,16 @@ async function main(): Promise<void> {
   if (!apiKey) throw new Error("INTERVALS_API_KEY not set");
 
   const today = todayLocal();
-  const start = addLocalDays(today, -weeksBack * 7 - 7); // pad a week for ramp context
+  const { firstWeek, wellnessStart } = reviewRange(today, weeksBack);
 
   const client = new IntervalsClient(apiKey);
   const [activities, wellness] = await Promise.all([
-    client.getActivities(start, today),
-    client.getTrainingLoadRange(start, today),
+    client.getActivities(firstWeek, today),
+    client.getTrainingLoadRange(wellnessStart, today),
   ]);
-  console.log(formatWeeklyReview(summarizeWeeks(activities), wellness, weeksBack));
+  console.log(
+    formatWeeklyReview(summarizeWeeks(activities), wellness, { firstWeek, today, weeksBack }),
+  );
 }
 
 main().catch((err) => {

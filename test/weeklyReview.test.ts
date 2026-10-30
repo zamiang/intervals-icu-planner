@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { IntervalsClient } from "../src/intervals.js";
-import { endOfWeekCtl, formatWeeklyReview, summarizeWeeks, weekKey } from "../src/weeklyReview.js";
+import {
+  endOfWeekCtl,
+  formatWeeklyReview,
+  reviewRange,
+  summarizeWeeks,
+  weekKey,
+} from "../src/weeklyReview.js";
 import type { Activity, WellnessEntry } from "../src/types.js";
 
 function activity(date: string, overrides: Partial<Activity> = {}): Activity {
@@ -129,19 +135,67 @@ describe("endOfWeekCtl", () => {
   });
 });
 
+describe("reviewRange", () => {
+  it("starts on a Monday so the first row is a full week", () => {
+    // Friday 10/30, two weeks back is Friday 10/16, whose week starts 10/12.
+    expect(reviewRange("2026-10-30", 2)).toEqual({
+      firstWeek: "2026-10-12",
+      wellnessStart: "2026-10-05",
+    });
+  });
+
+  it("keeps a Monday where it is", () => {
+    expect(reviewRange("2026-10-26", 1).firstWeek).toBe("2026-10-19");
+  });
+});
+
 describe("formatWeeklyReview", () => {
+  const range = { firstWeek: "2026-10-12", today: "2026-10-30", weeksBack: 2 };
+  const rowFor = (out: string, week: string) =>
+    out.split("\n").find((line) => line.startsWith(week));
+
   it("prints a row per week with easy % and the CTL ramp", () => {
     const out = formatWeeklyReview(
-      summarizeWeeks([activity("2026-10-26"), activity("2026-11-02")]),
-      [wellness("2026-11-01", 45), wellness("2026-11-05", 47)],
-      2,
+      summarizeWeeks([activity("2026-10-12"), activity("2026-10-19"), activity("2026-10-26")]),
+      [
+        wellness("2026-10-11", 44),
+        wellness("2026-10-18", 45),
+        wellness("2026-10-25", 47),
+        wellness("2026-10-29", 46),
+      ],
+      range,
     );
-    expect(out).toContain("last 2 weeks (2026-10-26 → 2026-11-02)");
-    expect(out).toMatch(/2026-10-26\s+50\s+1\.0\s+1\s+0\s+67%\s+1\.0\s+45\.0\s+\+0\.0/);
-    expect(out).toMatch(/2026-11-02\s+50\s+1\.0\s+1\s+0\s+67%\s+1\.0\s+47\.0\s+\+2\.0/);
+    expect(out).toContain("last 2 weeks plus this week (2026-10-12 → 2026-10-26)");
+    // The first row's ramp comes from the week before the report.
+    expect(rowFor(out, "2026-10-12")).toMatch(/50\s+1\.0\s+1\s+0\s+67%\s+1\.0\s+45\.0\s+\+1\.0/);
+    expect(rowFor(out, "2026-10-19")).toMatch(/47\.0\s+\+2\.0/);
+    expect(rowFor(out, "2026-10-26")).toMatch(/46\.0\s+-1\.0/);
+  });
+
+  it("shows a week with no activities, keeping each ramp to one week", () => {
+    const out = formatWeeklyReview(
+      summarizeWeeks([activity("2026-10-12"), activity("2026-10-26")]),
+      [wellness("2026-10-18", 45), wellness("2026-10-25", 43), wellness("2026-10-29", 44)],
+      range,
+    );
+    expect(rowFor(out, "2026-10-19")).toMatch(/\s0\s+0\.0\s+0\s+0\s+—\s+0\.0\s+43\.0\s+-2\.0/);
+    expect(rowFor(out, "2026-10-26")).toMatch(/44\.0\s+\+1\.0/);
+  });
+
+  it("shows an unknown ramp on both sides of a week with no CTL", () => {
+    const out = formatWeeklyReview(
+      summarizeWeeks([activity("2026-10-12"), activity("2026-10-19"), activity("2026-10-26")]),
+      [wellness("2026-10-18", 45), wellness("2026-10-29", 47)],
+      range,
+    );
+    expect(rowFor(out, "2026-10-12")).toMatch(/45\.0\s+—/); // nothing before the report
+    expect(rowFor(out, "2026-10-19")).toMatch(/—\s+—/);
+    expect(rowFor(out, "2026-10-26")).toMatch(/47\.0\s+—/);
   });
 
   it("says so when there is nothing to report", () => {
-    expect(formatWeeklyReview(new Map(), [], 8)).toContain("No activities in the last 8 weeks.");
+    expect(formatWeeklyReview(new Map(), [], range)).toContain(
+      "No activities in the last 2 weeks.",
+    );
   });
 });
