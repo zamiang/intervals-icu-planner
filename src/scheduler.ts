@@ -722,7 +722,8 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   }
 
   // Cutting order (PRIORITY_LABELS). A lift already on this week's calendar is
-  // the first lift, so every one planned here is then the optional one.
+  // the first lift, so every one planned here is then the optional one. Lifts
+  // from before the window don't count: the ranking is of the 7 days planned.
   let liftsSeen = existingWeightDays.filter((i) => i >= 0).length;
   out.forEach((w, i) => {
     if (w.type === "rest" || w.type === "travel") return;

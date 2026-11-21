@@ -30,6 +30,7 @@ import {
   progressionStep,
   projectCtl,
   secondLiftGate,
+  weightSessionsOn,
   windowTss,
 } from "./blocks.js";
 import type { AthleteProfile } from "./intervals.js";
@@ -695,7 +696,8 @@ export async function runPlan(
     );
   }
   const liftGate = secondLiftGate(today, config, rideHours);
-  if (!liftGate.open) {
+  // Only worth saying when the block asked for more than one lift to begin with.
+  if (!liftGate.open && weightSessionsOn(today, config) > 1) {
     log(
       `BIKE FLOOR: ${rideHours.toFixed(1)} h/wk ridden over the last 14 days vs the block's ` +
         `${liftGate.floorHours} h floor — at most one strength session this week`,
