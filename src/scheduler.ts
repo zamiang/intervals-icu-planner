@@ -37,6 +37,10 @@ function dayDiff(from: string, to: string): number {
   return Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86_400_000);
 }
 
+// Leads the description of a strength session stacked on a ride day.
+export const STACKED_LIFT_NOTE =
+  "Evening session: ride this morning, lift 6+ hours later (3 hours at the very least).";
+
 export type FatigueLevel = "fresh" | "moderate" | "fatigued" | "very_fatigued";
 
 export function classifyFatigue(tsb: number, config: Config): FatigueLevel {
@@ -160,7 +164,15 @@ function buildCyclingDescription(intensity: "easy" | "hard", targetZone?: Zone):
 // preserving full-recovery days for easy rides or rest. Within a stacked day,
 // the cycling workout precedes the weights session — interval quality suffers
 // most from pre-fatigue, while heavy low-rep lifting holds up after a ride.
-// The routine text (config.yaml) gives the same order plus a 6+ hour gap.
+// The routine text (config.yaml) gives the same order plus a 6+ hour gap, and
+// a stacked session is named and described as the evening one so the gap is on
+// the calendar itself.
+//
+// The weekly long ride's day is chosen before anything else is placed (the
+// latest open day that fits it). No strength session goes on that day or the
+// day before it: a heavy leg session costs next-day ride quality, and the long
+// ride outranks the second lift when a week is short. The one exception is a
+// week that would otherwise hold no strength at all.
 //
 // Fatigue tiers:
 //   - fresh:          hard cycling targets + weights co-locate on both
@@ -251,11 +263,15 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // into the "easy" bucket, so match the name directly here. Word-boundary
   // anchors avoid false positives like "Prolonged Effort" or "Longmont Crit".
   let hasExistingLongRide = false;
+  let existingLongIdx: number | undefined;
   for (const e of existingEvents) {
     if (e.category === "HOLIDAY") continue; // no training stress, and "Long weekend away" must not eat the long-ride promotion
     const idx = dayDiff(startDate, dayKey(e.start_date_local));
     if (idx >= days) continue;
-    if (idx >= 0 && /\blong\b/i.test(e.name)) hasExistingLongRide = true;
+    if (idx >= 0 && /\blong\b/i.test(e.name)) {
+      hasExistingLongRide = true;
+      existingLongIdx = idx;
+    }
     const kind = classifyExistingEvent(e);
     if (kind === "easy" || kind === "other") continue;
     existingHardDays.add(idx);
@@ -354,17 +370,23 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     });
   }
 
-  // The weekly long ride only fits days under the weekday cap, and it is placed
-  // last, so without this a quality or strength session could take the only day
-  // left for it. A very fatigued week doesn't protect it: that week is shedding
-  // load anyway.
+  // The weekly long ride takes the latest open day that fits it (with
+  // weekday_max_minutes set, a weekend day). It is chosen here, before any
+  // quality or strength session is placed, and held: the ride is promoted last
+  // (attachLoadTargets), so without the hold a session placed earlier could
+  // take its day, and a lift could land the day before it. A very fatigued
+  // week doesn't hold the day — that week is shedding load anyway — but still
+  // keeps lifts away from where the ride will most likely fall.
   const longMinutes = longRideMinutes(step, config);
   const fitsLongRide = (i: number): boolean => dayCapMinutes(dates[i], config) >= longMinutes;
-  const reservedForLongRide = (i: number): boolean =>
-    !hasExistingLongRide &&
-    !veryFatigued &&
-    fitsLongRide(i) &&
-    available.filter((j) => isEmpty(j) && fitsLongRide(j)).length === 1;
+  const plannedLongIdx = hasExistingLongRide
+    ? undefined
+    : [...available].reverse().find((i) => isEmpty(i) && fitsLongRide(i));
+  const longIdxForSpacing = existingLongIdx ?? plannedLongIdx;
+  const reservedForLongRide = (i: number): boolean => !veryFatigued && i === plannedLongIdx;
+  const isLongRideDay = (i: number): boolean => i === longIdxForSpacing;
+  const isDayBeforeLongRide = (i: number): boolean =>
+    longIdxForSpacing !== undefined && i === longIdxForSpacing - 1;
 
   // Phase 1: sweet-spot (mid-week), unless very fatigued or the calendar
   // already holds one this week.
@@ -439,55 +461,63 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   }
 
   // Phase 3: place weights, co-locating with hard days first, then overflowing.
-  const weightSlots: number[] = [];
+  // Neither kind of slot may be the long-ride day or the day before it. If that
+  // leaves the whole week without strength, a last pass allows the day before
+  // (never the day itself): one lift a week outranks the spacing rule, since
+  // one session holds strength and zero loses it.
   const hardStackOrder = stackWeightsOnHardDays
     ? [
         ...(lcIdx !== undefined ? [lcIdx] : []),
         ...[...hardCyclingTargets].sort((a, b) => a - b),
       ].sort((a, b) => a - b)
     : [];
-  for (const i of hardStackOrder) {
-    if (weightSlots.length >= weightSessionsRemaining) break;
-    if (!respectsWeightGap(i, weightSlots)) continue;
-    weightSlots.push(i);
-  }
-
-  if (weightSlots.length < weightSessionsRemaining) {
-    // Overflow: find additional days for weights. Candidates are empty days
-    // (plus hard-cycling target days that weren't picked above, but those are
-    // already "full" from our POV). Very_fatigued prefers mid-week.
-    const overflowCandidates = available.filter((i) => isEmpty(i) && !weightSlots.includes(i));
-    const ordered = veryFatigued
-      ? [...overflowCandidates].sort((a, b) => {
-          const midA = a >= 2 && a <= 4 ? 0 : 1;
-          const midB = b >= 2 && b <= 4 ? 0 : 1;
-          return midA - midB || a - b;
-        })
-      : overflowCandidates;
-    for (const i of ordered) {
-      if (weightSlots.length >= weightSessionsRemaining) break;
-      if (wouldCreateBackToBack(i)) continue;
-      if (!respectsWeightGap(i, weightSlots)) continue;
-      // weightSlots aren't on the plan yet, so count them as taken here.
-      if (
-        !hasExistingLongRide &&
-        !veryFatigued &&
-        fitsLongRide(i) &&
-        available.filter((j) => isEmpty(j) && fitsLongRide(j) && !weightSlots.includes(j))
-          .length === 1
-      ) {
-        continue;
-      }
-      weightSlots.push(i);
+  const pickWeightSlots = (allowDayBeforeLong: boolean, limit: number): number[] => {
+    const slots: number[] = [];
+    const clearOfLongRide = (i: number): boolean =>
+      !isLongRideDay(i) && (allowDayBeforeLong || !isDayBeforeLongRide(i));
+    for (const i of hardStackOrder) {
+      if (slots.length >= limit) break;
+      if (!clearOfLongRide(i)) continue;
+      if (!respectsWeightGap(i, slots)) continue;
+      slots.push(i);
     }
-  }
+    if (slots.length < limit) {
+      // Overflow: find additional days for weights. Candidates are empty days
+      // (plus hard-cycling target days that weren't picked above, but those are
+      // already "full" from our POV). Very_fatigued prefers mid-week.
+      const overflowCandidates = available.filter((i) => isEmpty(i) && !slots.includes(i));
+      const ordered = veryFatigued
+        ? [...overflowCandidates].sort((a, b) => {
+            const midA = a >= 2 && a <= 4 ? 0 : 1;
+            const midB = b >= 2 && b <= 4 ? 0 : 1;
+            return midA - midB || a - b;
+          })
+        : overflowCandidates;
+      for (const i of ordered) {
+        if (slots.length >= limit) break;
+        if (!clearOfLongRide(i)) continue;
+        if (wouldCreateBackToBack(i)) continue;
+        if (!respectsWeightGap(i, slots)) continue;
+        slots.push(i);
+      }
+    }
+    return slots;
+  };
+  let weightSlots = pickWeightSlots(false, weightSessionsRemaining);
+  const weekHasStrength = weightSlots.length > 0 || existingWeightDays.some((i) => i >= 0);
+  if (!weekHasStrength && weightSessionsRemaining > 0) weightSlots = pickWeightSlots(true, 1);
 
   for (const i of weightSlots) {
+    // A lift sharing its day with a ride is the evening session: ride first,
+    // lift 6+ hours later (see the ordering note on schedule()).
+    const stacked = plan[i].some((w) => w.type === "cycling" || w.type === "sweet_spot");
     plan[i].push({
       date: dates[i],
       type: "weights",
-      name: strengthRoutine.name,
-      description: strengthRoutine.description,
+      name: stacked ? `${strengthRoutine.name} — PM` : strengthRoutine.name,
+      description: stacked
+        ? `${STACKED_LIFT_NOTE}\n\n${strengthRoutine.description}`
+        : strengthRoutine.description,
       intensity: "hard",
       durationMin: strengthRoutine.duration_minutes,
     });
@@ -497,21 +527,17 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // rest already exists and no natural "after hard" slot is better; in that
   // case we still try to find a second rest for recovery from the weights.
   //
-  // The rest never takes the last open day that fits the long ride while the
-  // week still lacks one: it moves to another open day, or the week goes without
-  // it. A run that finds Mon-Fri already filled would otherwise rest on Sunday
-  // and lose the week's biggest ride. Only a very fatigued week with no day-0
-  // rest keeps it, since that rest would be its only one.
+  // The rest never takes the day held for the long ride: it moves to another
+  // open day, or the week goes without it. A run that finds Mon-Fri already
+  // filled would otherwise rest on Sunday and lose the week's biggest ride.
+  // Only a very fatigued week with no day-0 rest may take that day, since the
+  // rest would be its only one.
   const pickRestDay = (candidates: number[]): number | undefined =>
     candidates.find((i) => isHardDay(i - 1)) ?? candidates[candidates.length - 1];
-  const restCandidates = available.filter((i) => isEmpty(i));
-  let restIdx = pickRestDay(restCandidates);
-  if (!hasExistingLongRide && !(veryFatigued && !available.includes(0))) {
-    const longDays = restCandidates.filter((i) => dayCapMinutes(dates[i], config) >= longMinutes);
-    if (longDays.length === 1 && longDays[0] === restIdx) {
-      restIdx = pickRestDay(restCandidates.filter((i) => i !== restIdx));
-    }
-  }
+  const keepLongDay = !(veryFatigued && !available.includes(0));
+  const restIdx = pickRestDay(
+    available.filter((i) => isEmpty(i) && !(keepLongDay && i === plannedLongIdx)),
+  );
   let restDay: PlannedWorkout | undefined;
   if (restIdx !== undefined) {
     restDay = {

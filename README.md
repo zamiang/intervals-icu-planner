@@ -203,6 +203,14 @@ On **fresh** or **moderate** weeks, weight sessions are co-located onto hard
 days (polarized stacking) to keep full-recovery days open. On **fatigued** or
 **very fatigued** weeks this is disabled — stacking two hard sessions on one day
 defeats the recovery intent — so weights get their own spaced-out days instead.
+A stacked session is named `<routine> — PM` and its description opens with the
+ride-first, 6-hours-later instruction.
+
+The weekly long ride's day is chosen first (the latest open day that fits it)
+and held, so no other session takes it. No strength session is placed on that
+day or the day before it; a second lift that has nowhere else to go is dropped.
+The one exception is a week that would otherwise hold no strength at all, which
+may place a single session the day before the long ride.
 
 ### Zone targeting
 
