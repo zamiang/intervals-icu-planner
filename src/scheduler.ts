@@ -527,17 +527,18 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // rest already exists and no natural "after hard" slot is better; in that
   // case we still try to find a second rest for recovery from the weights.
   //
-  // The rest never takes the day held for the long ride: it moves to another
-  // open day, or the week goes without it. A run that finds Mon-Fri already
+  // The rest never takes the long-ride day while another open day exists: it
+  // moves there, or the week goes without it. A run that finds Mon-Fri already
   // filled would otherwise rest on Sunday and lose the week's biggest ride.
-  // Only a very fatigued week with no day-0 rest may take that day, since the
-  // rest would be its only one.
+  // Only a very fatigued week with no day-0 rest may take that day, and only
+  // when it is the last one open, since the rest would be its only one. (The
+  // week then has no long ride at all, so the lift spacing above still holds.)
   const pickRestDay = (candidates: number[]): number | undefined =>
     candidates.find((i) => isHardDay(i - 1)) ?? candidates[candidates.length - 1];
-  const keepLongDay = !(veryFatigued && !available.includes(0));
-  const restIdx = pickRestDay(
-    available.filter((i) => isEmpty(i) && !(keepLongDay && i === plannedLongIdx)),
-  );
+  const openDays = available.filter((i) => isEmpty(i));
+  const offLongDay = openDays.filter((i) => i !== plannedLongIdx);
+  const mayRestOnLongDay = veryFatigued && !available.includes(0) && offLongDay.length === 0;
+  const restIdx = pickRestDay(mayRestOnLongDay ? openDays : offLongDay);
   let restDay: PlannedWorkout | undefined;
   if (restIdx !== undefined) {
     restDay = {

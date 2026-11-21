@@ -2100,6 +2100,17 @@ describe("strength placement around the long ride", () => {
     expect(dayOf(plan, isLong)).toEqual(["2026-04-26"]);
   });
 
+  it("keeps the long ride and its spacing on a very fatigued week with Monday taken", () => {
+    // No day-0 rest is possible, so the rest used to take Sunday and push the
+    // long ride to Saturday, the day after wherever the lift had landed.
+    const plan = schedule(
+      makeInput({ config: cfg, trainingLoad: tsb(-25), completedDates: ["2026-04-20"] }),
+    );
+    expect(dayOf(plan, isLong)).toEqual(["2026-04-26"]);
+    expect(plan.some((w) => w.type === "rest")).toBe(true);
+    expectLiftsClearOfLongRide(plan);
+  });
+
   it("names a stacked lift as the evening session and leaves a standalone one plain", () => {
     const plan = schedule(makeInput({ config: cfg, trainingLoad: tsb(0) }));
     const lifts = plan.filter(isLift);
