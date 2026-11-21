@@ -460,8 +460,8 @@ function validateBlocks(raw: unknown): TrainingBlock[] {
     }
     if (obj.weight_sessions !== undefined) {
       const v = obj.weight_sessions;
-      if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
-        throw new Error(`${where}.weight_sessions must be a whole number, 0 or more`);
+      if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 7) {
+        throw new Error(`${where}.weight_sessions must be a whole number from 0 to 7`);
       }
       block.weight_sessions = v;
     }
@@ -475,10 +475,12 @@ function validateBlocks(raw: unknown): TrainingBlock[] {
       block.strength_routine = v as StrengthRoutine;
     }
     if (obj.bike_floor_hours !== undefined) {
-      if (typeof obj.bike_floor_hours !== "number" || obj.bike_floor_hours <= 0) {
+      // .inf and .nan parse as numbers and would close the gate for good.
+      const v = obj.bike_floor_hours;
+      if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
         throw new Error(`${where}.bike_floor_hours must be a positive number`);
       }
-      block.bike_floor_hours = obj.bike_floor_hours;
+      block.bike_floor_hours = v;
     }
     return block;
   });

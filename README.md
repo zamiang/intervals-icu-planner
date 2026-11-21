@@ -73,6 +73,8 @@ Workout definitions and scheduling rules live in `config.yaml`:
   `bike_floor_hours` ranks ride time above the second lift. When the last 14
   days average under it the week gets one lift, and when a lift on a day of its
   own would leave the planned week under it, that day becomes an easy ride.
+  No rides logged in those 14 days counts as 0 h, so the first week back from
+  a break or a trip gets one lift.
 - `weight_training_cut` — optional strength routine used instead of
   `weight_training` for weeks inside the `fueling` block window (same loads,
   fewer sets). A race taper takes precedence over it.

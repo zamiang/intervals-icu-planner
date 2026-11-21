@@ -648,34 +648,6 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     return idx >= 0 && idx < days;
   };
 
-  // Bike floor, planned side: a second lift on a day of its own takes that day
-  // from the bike. If the week's planned ride time then falls under the block's
-  // bike_floor_hours, the later such lift becomes an easy ride. Stacked lifts
-  // cost no ride time and are left alone. Abstains when a fixed day's ride time
-  // is unknown (a completed day, or a calendar ride with no planned duration),
-  // since that would read as zero hours and cut a lift the week had room for.
-  if (bikeFloorHours !== undefined) {
-    const fixedEvents = existingEvents.filter(
-      (e) => inWindow(e) && e.category === "WORKOUT" && classifyExistingEvent(e) !== "weights",
-    );
-    const unknown =
-      fixedEvents.some((e) => typeof e.moving_time !== "number") ||
-      (completedDates ?? []).some((d) => dates.includes(dayKey(d)));
-    const isRide = (w: PlannedWorkout): boolean => w.type === "cycling" || w.type === "sweet_spot";
-    const rideMinutes =
-      out.filter(isRide).reduce((s, w) => s + (w.durationMin ?? 0), 0) +
-      fixedEvents.reduce((s, e) => s + (e.moving_time ?? 0) / 60, 0);
-    const plannedLifts = out.filter((w) => w.type === "weights");
-    const ownDayLifts = plannedLifts.filter(
-      (l) => !out.some((w) => w.date === l.date && isRide(w)),
-    );
-    const liftsThisWeek = plannedLifts.length + existingWeightDays.filter((i) => i >= 0).length;
-    const dropped = ownDayLifts[ownDayLifts.length - 1];
-    if (!unknown && dropped && liftsThisWeek >= 2 && rideMinutes < bikeFloorHours * 60) {
-      Object.assign(dropped, easyRide(dropped.date));
-    }
-  }
-
   // Partial window: when earlier runs or hand-added events already fix most of
   // the week, this run can't make up a shortfall later, so the rest day has to
   // be affordable against the whole week. If existing events plus this plan fall
@@ -716,6 +688,37 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     const target = floorTargetTss(trainingLoad.ctl, floor, scheduling.max_weekly_ramp_pct);
     const shortfall = target - windowTss(out, existingEvents, startDate, days);
     if (shortfall > 0) extendEasyRides(out, longIdx, shortfall, config);
+  }
+
+  // Bike floor, planned side: a second lift on a day of its own takes that day
+  // from the bike. If the week's planned ride time then falls under the block's
+  // bike_floor_hours, the later such lift becomes an easy ride. Stacked lifts
+  // cost no ride time and are left alone. Abstains when a fixed day's ride time
+  // is unknown (a completed day, or a calendar ride with no planned duration),
+  // since that would read as zero hours and cut a lift the week had room for.
+  // Runs after the rest-day conversion and the season floor above, which both
+  // add ride time, so the week is judged by what it will actually hold; and
+  // before the priority pass, so a lift turned into a ride ranks as a ride.
+  if (bikeFloorHours !== undefined) {
+    const fixedEvents = existingEvents.filter(
+      (e) => inWindow(e) && e.category === "WORKOUT" && classifyExistingEvent(e) !== "weights",
+    );
+    const unknown =
+      fixedEvents.some((e) => typeof e.moving_time !== "number") ||
+      (completedDates ?? []).some((d) => dates.includes(dayKey(d)));
+    const isRide = (w: PlannedWorkout): boolean => w.type === "cycling" || w.type === "sweet_spot";
+    const rideMinutes =
+      out.filter(isRide).reduce((s, w) => s + (w.durationMin ?? 0), 0) +
+      fixedEvents.reduce((s, e) => s + (e.moving_time ?? 0) / 60, 0);
+    const plannedLifts = out.filter((w) => w.type === "weights");
+    const ownDayLifts = plannedLifts.filter(
+      (l) => !out.some((w) => w.date === l.date && isRide(w)),
+    );
+    const liftsThisWeek = plannedLifts.length + existingWeightDays.filter((i) => i >= 0).length;
+    const dropped = ownDayLifts[ownDayLifts.length - 1];
+    if (!unknown && dropped && liftsThisWeek >= 2 && rideMinutes < bikeFloorHours * 60) {
+      Object.assign(dropped, easyRide(dropped.date));
+    }
   }
 
   // Cutting order (PRIORITY_LABELS). A lift already on this week's calendar is

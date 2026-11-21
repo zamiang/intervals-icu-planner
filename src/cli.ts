@@ -288,6 +288,7 @@ export function buildPriorityNote(
       description: [
         "If the week runs short, drop sessions from the bottom of this list and keep the top.",
         "Shorten a lift by cutting sets and accessories, never the load.",
+        "Covers the sessions planned in this run; anything already on the calendar is not listed.",
         "",
         ...lines,
       ].join("\n"),
@@ -697,7 +698,7 @@ export async function runPlan(
   if (!liftGate.open) {
     log(
       `BIKE FLOOR: ${rideHours.toFixed(1)} h/wk ridden over the last 14 days vs the block's ` +
-        `${liftGate.floorHours} h floor — one strength session this week`,
+        `${liftGate.floorHours} h floor — at most one strength session this week`,
     );
   }
   if (holidaySet.size > 0) {

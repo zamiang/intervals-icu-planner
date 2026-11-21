@@ -221,6 +221,24 @@ blocks:
       /strength_routine/,
     ],
     [
+      "more sessions than days",
+      `
+  - { name: "A", start_date: "2026-01-01", end_date: "2026-01-31", weight_sessions: 8 }`,
+      /weight_sessions/,
+    ],
+    [
+      "an infinite bike floor",
+      `
+  - { name: "A", start_date: "2026-01-01", end_date: "2026-01-31", bike_floor_hours: .inf }`,
+      /bike_floor_hours/,
+    ],
+    [
+      "a NaN bike floor",
+      `
+  - { name: "A", start_date: "2026-01-01", end_date: "2026-01-31", bike_floor_hours: .nan }`,
+      /bike_floor_hours/,
+    ],
+    [
       "a non-positive bike floor",
       `
   - { name: "A", start_date: "2026-01-01", end_date: "2026-01-31", bike_floor_hours: 0 }`,

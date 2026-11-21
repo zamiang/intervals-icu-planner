@@ -2280,7 +2280,27 @@ describe("season strength dose", () => {
       const swapped = gated.find((w) => w.date === lifts(open)[1].date)!;
       expect(swapped.name).toBe("Easy Ride");
       expect(swapped.load).toBeGreaterThan(0);
+      expect(swapped.priority).toBe(4); // ranked as the ride it now is, not as a second lift
       expect(rideMin(gated)).toBeGreaterThan(rideMin(open));
+    });
+
+    it("judges the week after the season floor has lengthened its rides", () => {
+      // Fatigue tier 'moderate' keeps the ctl_floor stretch on; a first lift on
+      // its own day and a stacked second one. With the easy rides stretched the
+      // week clears a floor it would miss at their standard length.
+      const base = { trainingLoad: { ctl: 40, atl: 40, tsb: 0 }, recentRideHours: 20 };
+      const rideMin = (plan: PlannedWorkout[]): number =>
+        plan
+          .filter((w) => w.type === "cycling" || w.type === "sweet_spot")
+          .reduce((s, w) => s + (w.durationMin ?? 0), 0);
+      const plain = schedule(makeInput({ ...base, config: blockCfg({}) }));
+      const stretched = schedule(makeInput({ ...base, config: blockCfg({ ctl_floor: 60 }) }));
+      expect(rideMin(stretched)).toBeGreaterThan(rideMin(plain));
+      const floor = (rideMin(plain) + rideMin(stretched)) / 2 / 60;
+      const both = schedule(
+        makeInput({ ...base, config: blockCfg({ ctl_floor: 60, bike_floor_hours: floor }) }),
+      );
+      expect(both.map((w) => [w.date, w.type])).toEqual(stretched.map((w) => [w.date, w.type]));
     });
 
     it("leaves stacked lifts alone, since they take no day from the bike", () => {
