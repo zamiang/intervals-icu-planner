@@ -7,6 +7,7 @@ import {
   classifyPhase,
   phaseWeightSessions,
   downgradeOneTier,
+  STACKED_LIFT_NOTE,
 } from "../src/scheduler.js";
 import { emptyDistribution, zoneLabel } from "../src/zones.js";
 import { computeReadiness, type ReadinessSignal } from "../src/readiness.js";
@@ -19,6 +20,9 @@ import type {
   PlannedWorkout,
   WellnessEntry,
 } from "../src/types.js";
+
+// A lift stacked on a ride day is named as the evening session.
+const routineName = (w: PlannedWorkout): string => w.name.replace(/ — PM$/, "");
 
 function isHardEntry(w: PlannedWorkout): boolean {
   return w.type === "weights" || w.type === "sweet_spot" || w.intensity === "hard";
@@ -871,7 +875,7 @@ describe("schedule", () => {
       const plan = schedule(makeInput({ config: taperConfig, weeksToRace: 12 }));
       const weights = plan.filter((w) => w.type === "weights");
       expect(weights.length).toBe(2);
-      expect(weights.every((w) => w.name === "Strength")).toBe(true);
+      expect(weights.every((w) => routineName(w) === "Strength")).toBe(true);
       expect(weights.every((w) => w.durationMin === 60)).toBe(true);
     });
 
@@ -879,7 +883,7 @@ describe("schedule", () => {
       const plan = schedule(makeInput({ config: taperConfig, weeksToRace: 3 }));
       const weights = plan.filter((w) => w.type === "weights");
       expect(weights.length).toBe(1);
-      expect(weights[0].name).toBe("Taper Lift");
+      expect(routineName(weights[0])).toBe("Taper Lift");
       expect(weights[0].durationMin).toBe(30);
     });
 
@@ -903,37 +907,39 @@ describe("schedule", () => {
       const plan = schedule(makeInput({ config: cutConfig, weeksToRace: 12 }));
       const weights = plan.filter((w) => w.type === "weights");
       expect(weights.length).toBe(2);
-      expect(weights.every((w) => w.name === "Cut Lift" && w.durationMin === 50)).toBe(true);
+      expect(weights.every((w) => routineName(w) === "Cut Lift" && w.durationMin === 50)).toBe(
+        true,
+      );
     });
 
     it("uses the block routine outside the fueling window or with fueling off", () => {
       const before = schedule(
         makeInput({ config: cutConfig, startDate: "2026-04-13", weeksToRace: 12 }),
       );
-      expect(before.filter((w) => w.type === "weights").every((w) => w.name === "Strength")).toBe(
-        true,
-      );
+      expect(
+        before.filter((w) => w.type === "weights").every((w) => routineName(w) === "Strength"),
+      ).toBe(true);
       const off = schedule(
         makeInput({
           config: { ...cutConfig, fueling: { ...cutConfig.fueling, enabled: false } },
           weeksToRace: 12,
         }),
       );
-      expect(off.filter((w) => w.type === "weights").every((w) => w.name === "Strength")).toBe(
-        true,
-      );
+      expect(
+        off.filter((w) => w.type === "weights").every((w) => routineName(w) === "Strength"),
+      ).toBe(true);
     });
 
     it("prefers the taper routine over the cut routine inside the taper window", () => {
       const plan = schedule(makeInput({ config: cutConfig, weeksToRace: 3 }));
-      expect(plan.filter((w) => w.type === "weights").map((w) => w.name)).toEqual(["Taper Lift"]);
+      expect(plan.filter((w) => w.type === "weights").map(routineName)).toEqual(["Taper Lift"]);
     });
 
     it("falls back to the block routine when no taper variant is defined", () => {
       const plan = schedule(makeInput({ config: BASE_CONFIG, weeksToRace: 3 }));
       const weights = plan.filter((w) => w.type === "weights");
       expect(weights.length).toBe(1);
-      expect(weights[0].name).toBe("Strength");
+      expect(routineName(weights[0])).toBe("Strength");
       expect(weights[0].durationMin).toBe(60);
     });
 
@@ -1767,10 +1773,12 @@ describe("weekday_max_minutes", () => {
       existingEvents: filledMonFri,
     };
 
-    it("keeps the long ride when only Sat/Sun are open and Sat takes strength", () => {
+    it("keeps the long ride when only Sat/Sun are open, and keeps strength off Saturday", () => {
+      // Tuesday already holds the week's one lift, so the second is dropped
+      // rather than placed the day before the long ride.
       const result = schedule(makeInput({ ...week, trainingLoad: load(0) }));
       expect(result.map((w) => [w.date, w.name])).toEqual([
-        ["2026-10-31", BASE_CONFIG.weight_training.name],
+        ["2026-10-31", "Rest Day"],
         ["2026-11-01", "Long Endurance Ride"],
       ]);
       expect(result[1].durationMin).toBe(BASE_CONFIG.load_targets.long_minutes);
@@ -1780,8 +1788,10 @@ describe("weekday_max_minutes", () => {
 
     it("keeps the long ride on a fatigued week, as a full window would", () => {
       const result = schedule(makeInput({ ...week, trainingLoad: load(-15) }));
-      expect(result.some((w) => w.name === "Long Endurance Ride")).toBe(true);
-      expect(result.some((w) => w.type === "rest")).toBe(false);
+      expect(result.map((w) => [w.date, w.name])).toEqual([
+        ["2026-10-31", "Rest Day"],
+        ["2026-11-01", "Long Endurance Ride"],
+      ]);
     });
 
     it("lets a very fatigued week keep the rest when it would be its only one", () => {
@@ -1995,5 +2005,165 @@ describe("weekday_max_minutes", () => {
     const a = schedule(makeInput());
     const b = schedule(makeInput({ config: capCfg(null) }));
     expect(b).toEqual(a);
+  });
+});
+
+describe("strength placement around the long ride", () => {
+  // Mon 2026-04-20 window; a 120-min weekday cap keeps the long ride on the weekend.
+  const cfg: Config = {
+    ...BASE_CONFIG,
+    scheduling: { ...BASE_CONFIG.scheduling, weekday_max_minutes: 120 },
+  };
+  const tsb = (v: number) => ({ ctl: 46, atl: 46 - v, tsb: v });
+  const dayOf = (plan: PlannedWorkout[], pred: (w: PlannedWorkout) => boolean): string[] =>
+    plan.filter(pred).map((w) => w.date);
+  const isLong = (w: PlannedWorkout) => w.name === "Long Endurance Ride";
+  const isLift = (w: PlannedWorkout) => w.type === "weights";
+  const prevDay = (d: string): string => {
+    const x = new Date(d);
+    x.setUTCDate(x.getUTCDate() - 1);
+    return x.toISOString().slice(0, 10);
+  };
+  const expectLiftsClearOfLongRide = (plan: PlannedWorkout[]): void => {
+    const [long] = dayOf(plan, isLong);
+    expect(long).toBeDefined();
+    const lifts = dayOf(plan, isLift);
+    expect(lifts).not.toContain(long);
+    expect(lifts).not.toContain(prevDay(long));
+  };
+
+  it("puts the long ride on the last weekend day at every fatigue tier", () => {
+    for (const v of [10, 0, -15, -25]) {
+      const plan = schedule(makeInput({ config: cfg, trainingLoad: tsb(v) }));
+      expect(dayOf(plan, isLong)).toEqual(["2026-04-26"]);
+      expectLiftsClearOfLongRide(plan);
+    }
+  });
+
+  it("keeps lifts off the weekend on a fatigued week that starts a day late", () => {
+    // Previously: Fri lift, Sat long ride, Sun lift.
+    const plan = schedule(
+      makeInput({ config: cfg, trainingLoad: tsb(-15), completedDates: ["2026-04-20"] }),
+    );
+    expect(dayOf(plan, isLong)).toEqual(["2026-04-26"]);
+    expectLiftsClearOfLongRide(plan);
+    expect(dayOf(plan, isLift)).toEqual(["2026-04-24"]);
+  });
+
+  it("does not stack a lift on a quality day that precedes the long ride", () => {
+    // Window Wed 04-22 .. Tue 04-28 with a quality ride already on Wednesday:
+    // the sweet spot lands Friday, the long ride Sunday... and with Saturday the
+    // only quality slot left the lift must not follow it there.
+    const plan = schedule(
+      makeInput({
+        config: cfg,
+        startDate: "2026-04-22",
+        trainingLoad: tsb(0),
+        existingEvents: [
+          {
+            start_date_local: "2026-04-22T00:00:00",
+            name: "VO2 Max Intervals",
+            category: "WORKOUT",
+            type: "Ride",
+          },
+        ],
+      }),
+    );
+    expectLiftsClearOfLongRide(plan);
+  });
+
+  it("keeps lifts off the day before a long ride already on the calendar", () => {
+    const plan = schedule(
+      makeInput({
+        config: cfg,
+        trainingLoad: tsb(-15),
+        completedDates: ["2026-04-20", "2026-04-21"],
+        existingEvents: [
+          {
+            start_date_local: "2026-04-25T00:00:00",
+            name: "Long Endurance Ride",
+            category: "WORKOUT",
+            type: "Ride",
+          },
+        ],
+      }),
+    );
+    expect(dayOf(plan, isLift)).not.toContain("2026-04-24");
+  });
+
+  it("still places one lift the day before the long ride when the week has no other slot", () => {
+    // Only Sat/Sun open and no strength yet this week: one lift outranks the
+    // spacing rule, but it never takes the long-ride day itself.
+    const filled = ["2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24"];
+    const plan = schedule(makeInput({ config: cfg, trainingLoad: tsb(0), completedDates: filled }));
+    expect(dayOf(plan, isLift)).toEqual(["2026-04-25"]);
+    expect(dayOf(plan, isLong)).toEqual(["2026-04-26"]);
+  });
+
+  it("does not rest on the long-ride day in a very fatigued week with no day-0 rest", () => {
+    // Monday and Thursday taken: no open day follows the Wednesday lift, so the
+    // rest used to fall to the last open day (Sunday) and push the long ride
+    // to Saturday.
+    const plan = schedule(
+      makeInput({
+        config: cfg,
+        trainingLoad: tsb(-25),
+        completedDates: ["2026-04-20", "2026-04-23"],
+      }),
+    );
+    expect(dayOf(plan, isLong)).toEqual(["2026-04-26"]);
+    expect(dayOf(plan, (w) => w.type === "rest")).toEqual(["2026-04-25"]);
+    expectLiftsClearOfLongRide(plan);
+  });
+
+  it("holds the spacing against the ride's actual day for every tier and taken-day pair", () => {
+    const week = ["20", "21", "22", "23", "24", "25", "26"].map((d) => `2026-04-${d}`);
+    for (const v of [10, 0, -15, -25]) {
+      for (let a = -1; a < 7; a++) {
+        for (let b = a; b < 7; b++) {
+          const taken = [...new Set([a, b].filter((i) => i >= 0).map((i) => week[i]))];
+          const plan = schedule(
+            makeInput({ config: cfg, trainingLoad: tsb(v), completedDates: taken }),
+          );
+          const [long] = dayOf(plan, isLong);
+          if (!long) continue;
+          const lifts = dayOf(plan, isLift);
+          const where = `tsb ${v}, taken ${taken.join(",") || "none"}`;
+          expect(lifts, where).not.toContain(long);
+          // The day before is allowed only as the week's single, last-resort lift.
+          if (lifts.includes(prevDay(long))) expect(lifts.length, where).toBe(1);
+        }
+      }
+    }
+  });
+
+  it("never places a lift on a day that already holds a calendar ride", () => {
+    const plan = schedule(
+      makeInput({
+        config: cfg,
+        trainingLoad: tsb(0),
+        existingEvents: [
+          {
+            start_date_local: "2026-04-20T00:00:00",
+            name: "Easy Ride",
+            category: "WORKOUT",
+            type: "Ride",
+          },
+        ],
+      }),
+    );
+    expect(plan.some((w) => w.date === "2026-04-20")).toBe(false);
+  });
+
+  it("names a stacked lift as the evening session and leaves a standalone one plain", () => {
+    const plan = schedule(makeInput({ config: cfg, trainingLoad: tsb(0) }));
+    const lifts = plan.filter(isLift);
+    expect(lifts.length).toBe(2);
+    for (const lift of lifts) {
+      const stacked = plan.some((w) => w.date === lift.date && w.type !== "weights");
+      expect(lift.name).toBe(stacked ? "Strength — PM" : "Strength");
+      expect(lift.description.startsWith(STACKED_LIFT_NOTE)).toBe(stacked);
+    }
+    expect(lifts.some((l) => l.name.endsWith("— PM"))).toBe(true);
   });
 });
