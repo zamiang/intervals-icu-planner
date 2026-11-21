@@ -11,11 +11,13 @@ import type {
   PeriodizationConfig,
   ReadinessConfig,
   SchedulingConfig,
+  StrengthRoutine,
   TrainingBlock,
   WorkoutDefinition,
 } from "./types.js";
 
 const HARD_ZONES: readonly HardZone[] = ["threshold", "vo2", "anaerobic"];
+const STRENGTH_ROUTINES: readonly StrengthRoutine[] = ["build", "maintenance"];
 
 const SCHEDULING_DEFAULTS: SchedulingConfig = {
   tsb_fresh: 5,
@@ -456,6 +458,30 @@ function validateBlocks(raw: unknown): TrainingBlock[] {
       }
       block.ctl_floor = obj.ctl_floor;
     }
+    if (obj.weight_sessions !== undefined) {
+      const v = obj.weight_sessions;
+      if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 7) {
+        throw new Error(`${where}.weight_sessions must be a whole number from 0 to 7`);
+      }
+      block.weight_sessions = v;
+    }
+    if (obj.strength_routine !== undefined) {
+      const v = obj.strength_routine;
+      if (!STRENGTH_ROUTINES.includes(v as StrengthRoutine)) {
+        throw new Error(
+          `${where}.strength_routine must be one of: ${STRENGTH_ROUTINES.join(", ")}`,
+        );
+      }
+      block.strength_routine = v as StrengthRoutine;
+    }
+    if (obj.bike_floor_hours !== undefined) {
+      // .inf and .nan parse as numbers and would close the gate for good.
+      const v = obj.bike_floor_hours;
+      if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
+        throw new Error(`${where}.bike_floor_hours must be a positive number`);
+      }
+      block.bike_floor_hours = v;
+    }
     return block;
   });
   const sorted = [...blocks].sort((a, b) => a.start_date.localeCompare(b.start_date));
@@ -510,6 +536,11 @@ export async function loadConfig(filePath: string): Promise<Config> {
   const weight_training_cut = validateOptionalWorkout(
     doc.weight_training_cut,
     "weight_training_cut",
+  );
+
+  const weight_training_maintenance = validateOptionalWorkout(
+    doc.weight_training_maintenance,
+    "weight_training_maintenance",
   );
 
   const scheduling: SchedulingConfig = {
@@ -600,6 +631,7 @@ export async function loadConfig(filePath: string): Promise<Config> {
     weight_training,
     weight_training_taper,
     weight_training_cut,
+    weight_training_maintenance,
     sweet_spot,
     scheduling,
     load_targets,

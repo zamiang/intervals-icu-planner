@@ -26,6 +26,27 @@ export function hardZoneFocusOn(date: string, config: Config): HardZone | null {
   return config.scheduling.hard_zone_focus;
 }
 
+// Strength sessions a normal week asks for: the active block's weight_sessions
+// when it sets one, else scheduling.weight_sessions. Taper and fatigue caps are
+// applied on top by the scheduler.
+export function weightSessionsOn(date: string, config: Config): number {
+  return activeBlock(date, config.blocks)?.weight_sessions ?? config.scheduling.weight_sessions;
+}
+
+// Whether recent riding has earned the week's second lift. A block's
+// bike_floor_hours ranks ride time above that lift: when the trailing average
+// is under the floor the week gets one strength session. Abstains (open) when the block sets no floor or the caller has
+// no ride history to judge by.
+export function secondLiftGate(
+  date: string,
+  config: Config,
+  recentRideHours: number | undefined,
+): { open: boolean; floorHours?: number } {
+  const floorHours = activeBlock(date, config.blocks)?.bike_floor_hours;
+  if (floorHours === undefined) return { open: true };
+  return { open: recentRideHours === undefined || recentRideHours >= floorHours, floorHours };
+}
+
 // 1-based week of the block that `date` falls in, and the block's total weeks.
 export function blockWeek(date: string, block: TrainingBlock): { week: number; of: number } {
   const days = (a: string, b: string): number =>

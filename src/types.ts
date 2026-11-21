@@ -50,7 +50,14 @@ export interface TrainingBlock {
   hard_zone_focus?: HardZone | null; // overrides scheduling.hard_zone_focus; null = deficit pick for this block
   ctl_floor?: number; // minimum CTL to defend: easy rides lengthen when the planned week would end below it
   progression?: boolean; // climb the quality-session ladders and long ride one step every two block weeks
+  weight_sessions?: number; // overrides scheduling.weight_sessions (e.g. 2 in a winter strength block, 1 in season)
+  strength_routine?: StrengthRoutine; // "maintenance" uses weight_training_maintenance instead of weight_training
+  bike_floor_hours?: number; // weekly ride hours that outrank the second lift: below it, the week gets one lift and the day goes to a ride
 }
+
+// Which routine a block's ordinary weeks use. The cut and taper routines still
+// take over inside their own windows.
+export type StrengthRoutine = "build" | "maintenance";
 
 export interface PeriodizationConfig {
   taper_weeks: number; // default 4 — fewer weeks-to-race than this → taper phase
@@ -154,6 +161,7 @@ export interface Config {
   weight_training: WorkoutDefinition;
   weight_training_taper?: WorkoutDefinition; // optional; falls back to weight_training
   weight_training_cut?: WorkoutDefinition; // optional; used inside the fueling block window, falls back to weight_training
+  weight_training_maintenance?: WorkoutDefinition; // optional; used in a block with strength_routine: maintenance, falls back to weight_training
   sweet_spot: WorkoutDefinition;
   scheduling: SchedulingConfig;
   load_targets: LoadTargetsConfig;
@@ -226,6 +234,10 @@ export interface PlannedWorkout {
   intensity: CyclingIntensity | "hard"; // weights and sweet_spot are always "hard"
   targetZone?: Zone; // set on hard cycling days when zone distribution is supplied
   progressionStep?: number; // ladder rung for sweet-spot / interval sessions (src/workout.ts); absent ⇒ rung 0
+  // Where the session sits in the cutting order when the week runs short:
+  // 1 = keep first, higher = drop first (see PRIORITY_LABELS in src/scheduler.ts).
+  // Absent on rest days and travel placeholders.
+  priority?: number;
   // Planned-load targets, attached by the scheduler and pushed to Intervals.icu.
   load?: number; // planned TSS (icu_training_load)
   durationMin?: number; // planned duration in minutes (pushed as moving_time seconds)
@@ -243,4 +255,5 @@ export interface SchedulerInput {
   weeksToRace?: number; // whole weeks until the A race; undefined when no race is known
   readiness?: ReadinessSignal; // HRV/RHR readiness; absent ⇒ scheduler behaves exactly as before
   holidayDates?: string[]; // dates covered by HOLIDAY calendar events; blocked out per config.holidays.mode. Absent ⇒ scheduler behaves exactly as before
+  recentRideHours?: number; // average weekly ride hours over the trailing 14 days; input to a block's bike_floor_hours. Absent ⇒ that half of the gate abstains
 }

@@ -2,7 +2,13 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ quiet: true });
 import { loadConfig } from "./config.js";
 import { IntervalsClient } from "./intervals.js";
-import { schedule, classifyFatigue, effectiveFatigue, rampGuardTriggered } from "./scheduler.js";
+import {
+  schedule,
+  classifyFatigue,
+  effectiveFatigue,
+  rampGuardTriggered,
+  PRIORITY_LABELS,
+} from "./scheduler.js";
 import {
   computeReadiness,
   readinessActivityLookbackDays,
@@ -23,6 +29,8 @@ import {
   hardZoneFocusOn,
   progressionStep,
   projectCtl,
+  secondLiftGate,
+  weightSessionsOn,
   windowTss,
 } from "./blocks.js";
 import type { AthleteProfile } from "./intervals.js";
@@ -217,15 +225,76 @@ export function formatPlan(workouts: PlannedWorkout[]): string {
               ? "XT"
               : "CY";
     const zoneTag = w.targetZone ? ` (${zoneLabel(w.targetZone)})` : "";
+    const priorityTag = typeof w.priority === "number" ? `P${w.priority}` : "  ";
     const loadTag =
       typeof w.load === "number"
         ? `  ·  ${w.load} TSS${w.durationMin ? ` / ${w.durationMin}min` : ""}`
         : typeof w.durationMin === "number"
           ? `  ·  ${w.durationMin}min`
           : "";
-    return `${w.date} (${day})  [${icon}]  ${w.name}  — ${w.intensity}${zoneTag}${loadTag}`;
+    return `${w.date} (${day})  [${icon}] ${priorityTag}  ${w.name}  — ${w.intensity}${zoneTag}${loadTag}`;
   });
   return lines.join("\n");
+}
+
+// Average weekly ride hours over the 14 days before `today` — the input to a
+// block's bike_floor_hours. Today is left out: a Monday-morning run would
+// otherwise count a day that has barely started.
+export function recentRideHours(activities: Activity[], today: string): number {
+  const start = addLocalDays(today, -14);
+  const seconds = activities
+    .filter((a) => /ride/i.test(a.type))
+    .filter((a) => {
+      const d = a.start_date_local.slice(0, 10);
+      return d >= start && d < today;
+    })
+    .reduce((sum, a) => sum + (a.moving_time ?? 0), 0);
+  return seconds / 3600 / 2;
+}
+
+export const PRIORITY_NOTE_NAME = "Week priorities";
+
+// One calendar NOTE listing the week's sessions in cutting order, so what to
+// drop when the week runs short is decided on Monday rather than on the day.
+// Lands on the first planned session's date (a day that is already taken, so
+// the note never locks an open one). Empty when the plan carries no priorities
+// or the window already holds the note — a NOTE doesn't lock its day, so
+// nothing else stops a re-run from stacking a duplicate.
+export function buildPriorityNote(
+  planned: PlannedWorkout[],
+  existing: IntervalsEvent[],
+): IntervalsEvent[] {
+  const ranked = planned
+    .filter((w) => typeof w.priority === "number")
+    .sort((a, b) => a.priority! - b.priority! || a.date.localeCompare(b.date));
+  if (ranked.length === 0) return [];
+  const first = [...ranked].sort((a, b) => a.date.localeCompare(b.date))[0].date;
+  const noted = existing.some(
+    (e) =>
+      e.category === "NOTE" &&
+      e.name === PRIORITY_NOTE_NAME &&
+      e.start_date_local.slice(0, 10) >= first,
+  );
+  if (noted) return [];
+  const day = (d: string): string =>
+    new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+  const lines = ranked.map(
+    (w) => `${w.priority}. ${day(w.date)} — ${w.name} (${PRIORITY_LABELS[w.priority!]})`,
+  );
+  return [
+    {
+      start_date_local: `${first}T00:00:00`,
+      name: PRIORITY_NOTE_NAME,
+      category: "NOTE",
+      description: [
+        "If the week runs short, drop sessions from the bottom of this list and keep the top.",
+        "Shorten a lift by cutting sets and accessories, never the load.",
+        "Covers the sessions planned in this run; anything already on the calendar is not listed.",
+        "",
+        ...lines,
+      ].join("\n"),
+    },
+  ];
 }
 
 // Sum of planned TSS across a week's workouts — shown under the plan so the
@@ -589,6 +658,7 @@ export async function runPlan(
   const weeksToRace = raceDate ? weeksUntil(today, raceDate) : undefined;
 
   const holidaySet = holidayDatesInWindow(holidayEvents, today, endStr);
+  const rideHours = recentRideHours(activities, today);
 
   const planned = schedule({
     startDate: today,
@@ -601,6 +671,7 @@ export async function runPlan(
     weeksToRace,
     readiness,
     holidayDates: [...holidaySet],
+    recentRideHours: rideHours,
   }).map((w) => ({ ...w, description: renderTargets(w.description, renderValues) }));
 
   // Match the scheduler: suppressed readiness downgrades the displayed tier too,
@@ -622,6 +693,14 @@ export async function runPlan(
   if (rampGuardTriggered(rampRatePct, config) && rampRatePct !== undefined) {
     log(
       `WARNING: CTL ramp +${rampRatePct.toFixed(1)}%/wk > ${config.scheduling.max_weekly_ramp_pct}% threshold — hard rides downgraded`,
+    );
+  }
+  const liftGate = secondLiftGate(today, config, rideHours);
+  // Only worth saying when the block asked for more than one lift to begin with.
+  if (!liftGate.open && weightSessionsOn(today, config) > 1) {
+    log(
+      `BIKE FLOOR: ${rideHours.toFixed(1)} h/wk ridden over the last 14 days vs the block's ` +
+        `${liftGate.floorHours} h floor — at most one strength session this week`,
     );
   }
   if (holidaySet.size > 0) {
@@ -664,6 +743,7 @@ export async function runPlan(
   if (fuelNotes.length > 0) {
     log(`Fuelling: ${fuelNotes.length} daily note(s) — ${fuelNotes[0].name}`);
   }
+  const priorityNote = buildPriorityNote(planned, events);
 
   if (dryRun) {
     log("(dry run — nothing pushed to Intervals.icu; re-run with --apply to push)");
@@ -673,6 +753,16 @@ export async function runPlan(
   log("Pushing to Intervals.icu...");
   const { created, failed } = await pushPlan(intervals, planned, log);
   await pushFuelNotes(intervals, fuelNotes, log);
+  for (const note of priorityNote) {
+    // An accessory to the week, like the fuel notes: a failure here must not
+    // mark a run whose workouts all landed as failed.
+    try {
+      await intervals.createEvent(note);
+      log(`  Created: ${note.name} note.`);
+    } catch (err) {
+      log(`  FAILED:  ${note.name} note — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   if (failed.length === 0) {
     log(`Done. Created ${created.length} event(s).`);
   } else {

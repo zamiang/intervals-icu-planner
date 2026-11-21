@@ -2,10 +2,24 @@ import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runCheck, runPlan, runStatus, type PlannerClient } from "../src/cli.js";
+import {
+  buildPriorityNote,
+  PRIORITY_NOTE_NAME,
+  recentRideHours,
+  runCheck,
+  runPlan,
+  runStatus,
+  type PlannerClient,
+} from "../src/cli.js";
 import { loadConfig } from "../src/config.js";
 import { addLocalDays } from "../src/dates.js";
-import type { Activity, Config, IntervalsEvent, WellnessEntry } from "../src/types.js";
+import type {
+  Activity,
+  Config,
+  IntervalsEvent,
+  PlannedWorkout,
+  WellnessEntry,
+} from "../src/types.js";
 
 // End-to-end tests for the CLI commands: real config loading, scheduling and
 // event mapping, with only the Intervals.icu client faked. These cover the
@@ -125,7 +139,9 @@ describe("runPlan", () => {
     const code = await runPlan(client, await configFrom(), planOpts(out.log));
 
     expect(code).toBe(0);
-    const events = createdEvents(client);
+    // Everything pushed except the one "Week priorities" note.
+    const all = createdEvents(client);
+    const events = all.filter((e) => e.name !== PRIORITY_NOTE_NAME);
     expect(events.length).toBeGreaterThan(0);
     for (const e of events) {
       expect(e.start_date_local).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00$/);
@@ -134,6 +150,18 @@ describe("runPlan", () => {
       expect(e.category).not.toBe("NOTE"); // rest days are never pushed
     }
     expect(out.text()).toContain(`Done. Created ${events.length} event(s).`);
+
+    // The note lists every pushed session in cutting order, top priority first.
+    const notes = all.filter((e) => e.name === PRIORITY_NOTE_NAME);
+    expect(notes.length).toBe(1);
+    expect(notes[0].category).toBe("NOTE");
+    const ranks = (notes[0].description ?? "")
+      .split("\n")
+      .filter((l) => /^\d\. /.test(l))
+      .map((l) => Number(l[0]));
+    expect(ranks.length).toBe(events.length);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    expect(ranks[0]).toBe(1);
   });
 
   it("fetches the planning window, race horizon, and holiday lookback", async () => {
@@ -284,7 +312,9 @@ fueling:
     expect(code).toBe(0);
     // The local file is complete, so the account profile is never asked.
     expect(client.getAthlete).not.toHaveBeenCalled();
-    const notes = createdEvents(client).filter((e) => e.category === "NOTE");
+    const notes = createdEvents(client).filter(
+      (e) => e.category === "NOTE" && e.name !== PRIORITY_NOTE_NAME,
+    );
     expect(notes.length).toBe(7);
     expect(notes.every((n) => n.name.startsWith("Fuel "))).toBe(true);
   });
@@ -354,5 +384,58 @@ describe("runCheck", () => {
     expect(await runCheck(client, { today: TODAY, log: out.log })).toBe(1);
     expect(out.text()).toContain("FAIL  Intervals.icu ride sport-settings — ");
     expect(out.text()).toContain("1 check(s) failed.");
+  });
+});
+
+describe("recentRideHours", () => {
+  it("averages ride time over the 14 days before today, rides only", () => {
+    const hour = { moving_time: 3600 };
+    const acts = [
+      activity("2026-11-09", hour), // 14 days back: counted
+      activity("2026-11-15", { moving_time: 7200, type: "VirtualRide" }),
+      activity("2026-11-22", hour),
+      activity("2026-11-20", { moving_time: 3600, type: "WeightTraining" }), // not a ride
+      activity("2026-11-08", hour), // too old
+      activity("2026-11-23", hour), // today: left out
+    ];
+    expect(recentRideHours(acts, "2026-11-23")).toBe(2); // 4 h over two weeks
+    expect(recentRideHours([], "2026-11-23")).toBe(0);
+  });
+});
+
+describe("buildPriorityNote", () => {
+  const w = (date: string, name: string, priority?: number): PlannedWorkout => ({
+    date,
+    type: "cycling",
+    name,
+    description: "",
+    intensity: "easy",
+    ...(priority === undefined ? {} : { priority }),
+  });
+  const planned = [
+    w("2026-11-23", "Rest Day"),
+    w("2026-11-24", "Easy Ride", 4),
+    w("2026-11-25", "Sweet Spot Intervals", 1),
+    w("2026-11-29", "Long Endurance Ride", 2),
+  ];
+
+  it("lists sessions in cutting order on the first planned session's day", () => {
+    const [note] = buildPriorityNote(planned, []);
+    expect(note.start_date_local).toBe("2026-11-24T00:00:00");
+    expect(note.category).toBe("NOTE");
+    const lines = (note.description ?? "").split("\n").filter((l) => /^\d\. /.test(l));
+    expect(lines).toEqual([
+      "1. Wed — Sweet Spot Intervals (quality ride)",
+      "2. Sun — Long Endurance Ride (long ride)",
+      "4. Tue — Easy Ride (easy ride)",
+    ]);
+  });
+
+  it("is empty when nothing is ranked or the week already has the note", () => {
+    expect(buildPriorityNote([w("2026-11-23", "Rest Day")], [])).toEqual([]);
+    const existing = [
+      { start_date_local: "2026-11-24T00:00:00", name: PRIORITY_NOTE_NAME, category: "NOTE" },
+    ];
+    expect(buildPriorityNote(planned, existing)).toEqual([]);
   });
 });
