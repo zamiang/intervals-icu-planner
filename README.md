@@ -34,7 +34,8 @@ Workout definitions and scheduling rules live in `config.yaml`:
 - `sweet_spot` — name, duration, and description pushed on the weekly quality (sweet-spot) day.
 - `scheduling.tsb_fresh` — TSB above this is considered "fresh" (default `5`).
 - `scheduling.tsb_fatigued` — TSB below this is considered "fatigued" (default `-10`).
-- `scheduling.weight_sessions` — weight sessions per week (default `2`).
+- `scheduling.weight_sessions` — weight sessions per week (default `2`). A
+  block may override it (see `blocks`).
 - `scheduling.min_weight_gap_days` — minimum days between weight sessions (default `2`).
 - `scheduling.max_weekly_ramp_pct` — CTL ramp above this triggers an easy-bias
   guard (default `7`).
@@ -61,6 +62,17 @@ Workout definitions and scheduling rules live in `config.yaml`:
   `long_minutes`, i.e. no growth). A fatigued, readiness-suppressed or
   ramp-guarded week repeats the previous rung. `status` and `plan` print the
   active block, its week, its progression step, and CTL against the floor.
+- `weight_training_maintenance` — optional strength routine used in a block
+  with `strength_routine: maintenance` (same loads, fewer sets).
+- Strength placeholders: `{reps}` in any strength routine renders the main-lift
+  rep target — `5-6` normally; inside a block with `progression: true` it walks
+  `8-10` → `6-8` → `5-6`, four weeks a rung, and a back-off week repeats the
+  previous rung.
+- Block strength keys: `weight_sessions` overrides the weekly count;
+  `strength_routine` (`build` or `maintenance`) picks the routine;
+  `bike_floor_hours` ranks ride time above the second lift. When the last 14
+  days average under it the week gets one lift, and when a lift on a day of its
+  own would leave the planned week under it, that day becomes an easy ride.
 - `weight_training_cut` — optional strength routine used instead of
   `weight_training` for weeks inside the `fueling` block window (same loads,
   fewer sets). A race taper takes precedence over it.
@@ -211,6 +223,11 @@ and held, so no other session takes it. No strength session is placed on that
 day or the day before it; a second lift that has nowhere else to go is dropped.
 The one exception is a week that would otherwise hold no strength at all, which
 may place a single session the day before the long ride.
+
+Every planned session carries a priority for a week that runs short: 1 quality
+ride, 2 long ride, 3 first lift, 4 easy ride, 5 second lift. `plan` prints it
+(`P1`…`P5`), names the second lift `(optional)`, and pushes one "Week
+priorities" note listing the week in that order — drop from the bottom.
 
 ### Zone targeting
 

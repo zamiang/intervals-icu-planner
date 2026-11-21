@@ -5,6 +5,7 @@ import {
   hardIntervalWorkout,
   structuredWorkoutFor,
   INTERVAL_LADDERS,
+  strengthReps,
 } from "../src/workout.js";
 import type { PlannedWorkout } from "../src/types.js";
 
@@ -169,5 +170,24 @@ describe("structuredWorkoutFor", () => {
   it("returns null for weights and rest", () => {
     expect(structuredWorkoutFor(planned({ type: "weights", intensity: "hard" }))).toBeNull();
     expect(structuredWorkoutFor(planned({ type: "rest" }))).toBeNull();
+  });
+});
+
+describe("strengthReps", () => {
+  it("sits at the heavy end outside a progressing block", () => {
+    expect(strengthReps(0, false)).toBe("5-6");
+    expect(strengthReps(3, false)).toBe("5-6");
+  });
+
+  it("walks down two progression steps a rung and holds the last", () => {
+    expect([0, 1, 2, 3, 4, 5, 9].map((s) => strengthReps(s, true))).toEqual([
+      "8-10",
+      "8-10",
+      "6-8",
+      "6-8",
+      "5-6",
+      "5-6",
+      "5-6",
+    ]);
   });
 });

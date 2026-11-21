@@ -108,6 +108,24 @@ export function easyEnduranceWorkout(minutes: number, ftpPct: number): Structure
   };
 }
 
+// Rep target for the main lifts, rendered into a routine's `{reps}`
+// placeholder. Outside a progressing block the routine sits at the heavy end
+// (the last rung). Inside one the block walks down to it: higher reps first to
+// groove the lift at a load that can be progressed, then fewer reps at more
+// load, the shape the strength-for-cyclists trials used. A rung lasts four
+// weeks (two progression steps): strength loads move more slowly than interval
+// minutes. The ladder stops at 5-6 rather than a true 4RM because band and
+// home setups can't be loaded finely enough for very low reps to mean much.
+export const STRENGTH_REP_LADDER: readonly string[] = ["8-10", "6-8", "5-6"];
+const STEPS_PER_STRENGTH_RUNG = 2;
+
+export function strengthReps(step: number, progressing: boolean): string {
+  const last = STRENGTH_REP_LADDER.length - 1;
+  if (!progressing) return STRENGTH_REP_LADDER[last];
+  const i = Math.floor(Math.max(0, step) / STEPS_PER_STRENGTH_RUNG);
+  return STRENGTH_REP_LADDER[Math.min(i, last)];
+}
+
 // Main-set ladders. A block with `progression: true` climbs one rung every two
 // weeks (src/blocks.ts progressionStep); outside one, rung 0 is the session.
 // Each rung adds work time — progressive overload — and the last rung holds.

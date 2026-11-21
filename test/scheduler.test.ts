@@ -8,6 +8,7 @@ import {
   phaseWeightSessions,
   downgradeOneTier,
   STACKED_LIFT_NOTE,
+  OPTIONAL_LIFT_NOTE,
 } from "../src/scheduler.js";
 import { emptyDistribution, zoneLabel } from "../src/zones.js";
 import { computeReadiness, type ReadinessSignal } from "../src/readiness.js";
@@ -21,8 +22,10 @@ import type {
   WellnessEntry,
 } from "../src/types.js";
 
-// A lift stacked on a ride day is named as the evening session.
-const routineName = (w: PlannedWorkout): string => w.name.replace(/ — PM$/, "");
+// A lift stacked on a ride day is named as the evening session, and the
+// week's second lift as optional.
+const routineName = (w: PlannedWorkout): string =>
+  w.name.replace(/ \(optional\)$/, "").replace(/ — PM$/, "");
 
 function isHardEntry(w: PlannedWorkout): boolean {
   return w.type === "weights" || w.type === "sweet_spot" || w.intensity === "hard";
@@ -2106,9 +2109,188 @@ describe("strength placement around the long ride", () => {
     expect(lifts.length).toBe(2);
     for (const lift of lifts) {
       const stacked = plan.some((w) => w.date === lift.date && w.type !== "weights");
-      expect(lift.name).toBe(stacked ? "Strength — PM" : "Strength");
-      expect(lift.description.startsWith(STACKED_LIFT_NOTE)).toBe(stacked);
+      expect(lift.name.replace(/ \(optional\)$/, "")).toBe(stacked ? "Strength — PM" : "Strength");
+      expect(lift.description.includes(STACKED_LIFT_NOTE)).toBe(stacked);
     }
-    expect(lifts.some((l) => l.name.endsWith("— PM"))).toBe(true);
+    expect(lifts.some((l) => l.name.includes("— PM"))).toBe(true);
+  });
+});
+
+describe("season strength dose", () => {
+  // makeInput plans the week starting Mon 2026-04-20.
+  const blockCfg = (
+    extra: Partial<NonNullable<Config["blocks"]>[number]>,
+    base: Config = BASE_CONFIG,
+  ): Config => ({
+    ...base,
+    blocks: [{ name: "Test block", start_date: "2026-04-01", end_date: "2026-05-31", ...extra }],
+  });
+  const lifts = (plan: PlannedWorkout[]): PlannedWorkout[] =>
+    plan.filter((w) => w.type === "weights");
+  const tsb = (v: number) => ({ ctl: 46, atl: 46 - v, tsb: v });
+
+  it("takes the session count from the active block", () => {
+    expect(lifts(schedule(makeInput({ config: blockCfg({ weight_sessions: 1 }) }))).length).toBe(1);
+    expect(lifts(schedule(makeInput({ config: blockCfg({}) }))).length).toBe(2);
+    // Outside the block's dates the top-level count is back in force.
+    const after = schedule(
+      makeInput({ config: blockCfg({ weight_sessions: 1 }), startDate: "2026-06-01" }),
+    );
+    expect(lifts(after).length).toBe(2);
+  });
+
+  it("still lets the taper and a very fatigued week cap a block's count", () => {
+    const cfg = blockCfg({ weight_sessions: 2 });
+    expect(lifts(schedule(makeInput({ config: cfg, weeksToRace: 0 }))).length).toBe(0);
+    expect(lifts(schedule(makeInput({ config: cfg, trainingLoad: tsb(-30) }))).length).toBe(1);
+  });
+
+  it("uses the maintenance routine in a block that asks for it", () => {
+    const base: Config = {
+      ...BASE_CONFIG,
+      weight_training_maintenance: { name: "Maintain", duration_minutes: 35, description: "2x5" },
+    };
+    const plan = schedule(
+      makeInput({
+        config: blockCfg({ strength_routine: "maintenance", weight_sessions: 1 }, base),
+      }),
+    );
+    expect(lifts(plan).map((w) => [routineName(w), w.durationMin])).toEqual([["Maintain", 35]]);
+    // No maintenance routine defined: fall back to the default one.
+    const fallback = schedule(makeInput({ config: blockCfg({ strength_routine: "maintenance" }) }));
+    expect(lifts(fallback).every((w) => routineName(w) === "Strength")).toBe(true);
+  });
+
+  describe("{reps}", () => {
+    const base: Config = {
+      ...BASE_CONFIG,
+      weight_training: { ...BASE_CONFIG.weight_training, description: "Squat 3x{reps}" },
+    };
+    const repsAt = (startDate: string, config: Config, load = tsb(10)): string =>
+      lifts(schedule(makeInput({ config, startDate, trainingLoad: load })))[0].description;
+
+    it("renders the heavy end outside a progressing block", () => {
+      expect(repsAt("2026-04-20", base)).toContain("Squat 3x5-6");
+      expect(repsAt("2026-04-20", blockCfg({}, base))).toContain("Squat 3x5-6");
+    });
+
+    it("walks down four weeks a rung inside a progressing block", () => {
+      const cfg = blockCfg({ progression: true, start_date: "2026-04-06" }, base);
+      expect(repsAt("2026-04-06", cfg)).toContain("Squat 3x8-10"); // week 1
+      expect(repsAt("2026-04-27", cfg)).toContain("Squat 3x8-10"); // week 4
+      expect(repsAt("2026-05-04", cfg)).toContain("Squat 3x6-8"); // week 5
+      const long = blockCfg(
+        { progression: true, start_date: "2026-04-06", end_date: "2026-07-26" },
+        base,
+      );
+      expect(repsAt("2026-06-01", long)).toContain("Squat 3x5-6"); // week 9
+      expect(repsAt("2026-07-20", long)).toContain("Squat 3x5-6"); // holds
+    });
+
+    it("repeats the previous rung on a back-off week", () => {
+      const cfg = blockCfg({ progression: true, start_date: "2026-04-06" }, base);
+      expect(repsAt("2026-05-04", cfg, tsb(-15))).toContain("Squat 3x8-10");
+    });
+  });
+
+  describe("bike_floor_hours", () => {
+    const cfg = blockCfg({ bike_floor_hours: 6 });
+
+    it("gives the week one lift when recent riding is under the floor", () => {
+      expect(lifts(schedule(makeInput({ config: cfg, recentRideHours: 4.1 }))).length).toBe(1);
+      expect(lifts(schedule(makeInput({ config: cfg, recentRideHours: 6 }))).length).toBe(2);
+    });
+
+    it("abstains without ride history or without a floor", () => {
+      expect(lifts(schedule(makeInput({ config: cfg }))).length).toBe(2);
+      expect(lifts(schedule(makeInput({ recentRideHours: 0 }))).length).toBe(2);
+    });
+
+    it("turns a standalone second lift into a ride when the planned week falls short", () => {
+      // A fatigued week un-stacks its lifts, so each takes a day from the bike.
+      const input = { trainingLoad: tsb(-15), recentRideHours: 8 };
+      const open = schedule(makeInput({ ...input, config: blockCfg({ bike_floor_hours: 1 }) }));
+      expect(lifts(open).length).toBe(2);
+      const rideMin = (plan: PlannedWorkout[]): number =>
+        plan
+          .filter((w) => w.type === "cycling" || w.type === "sweet_spot")
+          .reduce((s, w) => s + (w.durationMin ?? 0), 0);
+      const floor = rideMin(open) / 60 + 0.5; // just above what the week holds with two lifts
+      const gated = schedule(
+        makeInput({ ...input, config: blockCfg({ bike_floor_hours: floor }) }),
+      );
+      expect(lifts(gated).length).toBe(1);
+      // The earlier lift stays; the later one's day is now an easy ride with load.
+      expect(lifts(gated)[0].date).toBe(lifts(open)[0].date);
+      const swapped = gated.find((w) => w.date === lifts(open)[1].date)!;
+      expect(swapped.name).toBe("Easy Ride");
+      expect(swapped.load).toBeGreaterThan(0);
+      expect(rideMin(gated)).toBeGreaterThan(rideMin(open));
+    });
+
+    it("leaves stacked lifts alone, since they take no day from the bike", () => {
+      const plan = schedule(
+        makeInput({
+          trainingLoad: tsb(10),
+          recentRideHours: 20,
+          config: blockCfg({ bike_floor_hours: 20 }),
+        }),
+      );
+      expect(lifts(plan).length).toBe(2);
+    });
+
+    it("abstains on the planned side when a fixed day's ride time is unknown", () => {
+      // One day already ridden: its duration isn't known here, so the week's
+      // ride time can't be judged and the plan matches one with no floor at all.
+      const input = {
+        trainingLoad: tsb(-15),
+        recentRideHours: 20,
+        completedDates: ["2026-04-21"],
+      };
+      const names = (config: Config): string[][] =>
+        schedule(makeInput({ ...input, config })).map((w) => [w.date, w.name]);
+      const noFloor = names(blockCfg({}));
+      expect(noFloor.filter(([, n]) => n.startsWith("Strength")).length).toBe(2);
+      expect(names(blockCfg({ bike_floor_hours: 20 }))).toEqual(noFloor);
+    });
+  });
+
+  describe("cutting-order priorities", () => {
+    it("ranks quality, long ride, first lift, easy rides, second lift", () => {
+      const plan = schedule(makeInput({ trainingLoad: tsb(10) }));
+      for (const w of plan) {
+        if (w.type === "rest") expect(w.priority).toBeUndefined();
+        else if (w.type === "sweet_spot" || (w.type === "cycling" && w.intensity === "hard"))
+          expect(w.priority).toBe(1);
+        else if (w.name === "Long Endurance Ride") expect(w.priority).toBe(2);
+        else if (w.type === "cycling") expect(w.priority).toBe(4);
+      }
+      expect(lifts(plan).map((w) => w.priority)).toEqual([3, 5]);
+    });
+
+    it("marks only the second lift optional", () => {
+      const [first, second] = lifts(schedule(makeInput({ trainingLoad: tsb(10) })));
+      expect(first.name).not.toContain("(optional)");
+      expect(first.description).not.toContain(OPTIONAL_LIFT_NOTE);
+      expect(second.name.endsWith("(optional)")).toBe(true);
+      expect(second.description.startsWith(OPTIONAL_LIFT_NOTE)).toBe(true);
+    });
+
+    it("treats a lift already on the calendar as the first", () => {
+      const plan = schedule(
+        makeInput({
+          trainingLoad: tsb(10),
+          existingEvents: [
+            {
+              start_date_local: "2026-04-20T00:00:00",
+              name: "Strength",
+              category: "WORKOUT",
+              type: "WeightTraining",
+            },
+          ],
+        }),
+      );
+      expect(lifts(plan).map((w) => w.priority)).toEqual([5]);
+    });
   });
 });

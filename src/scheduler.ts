@@ -15,10 +15,17 @@ import {
   hardZoneFocusOn,
   longRideMinutes,
   progressionStep,
+  secondLiftGate,
+  weightSessionsOn,
   windowTss,
 } from "./blocks.js";
 import type { ReadinessSignal } from "./readiness.js";
-import { hardIntervalWorkout, sweetSpotWorkout, type StructuredWorkout } from "./workout.js";
+import {
+  hardIntervalWorkout,
+  strengthReps,
+  sweetSpotWorkout,
+  type StructuredWorkout,
+} from "./workout.js";
 
 function addDays(dateStr: string, days: number): string {
   // Parse and mutate in UTC throughout. A bare "YYYY-MM-DD" is parsed as UTC
@@ -40,6 +47,22 @@ function dayDiff(from: string, to: string): number {
 // Leads the description of a strength session stacked on a ride day.
 export const STACKED_LIFT_NOTE =
   "Evening session: ride this morning, lift 6+ hours later (3 hours at the very least).";
+
+// Leads the description of the week's lower-priority strength session.
+export const OPTIONAL_LIFT_NOTE =
+  "Optional: this is the first session to drop if the week runs short.";
+
+// The cutting order for a short week, by PlannedWorkout.priority: keep 1, drop
+// from the bottom. Quality rides hold aerobic fitness through a volume cut only
+// if intensity is kept; the long ride is the durability the season is for; one
+// lift holds strength where zero loses it; then ride time; then the second lift.
+export const PRIORITY_LABELS: Record<number, string> = {
+  1: "quality ride",
+  2: "long ride",
+  3: "first lift",
+  4: "easy ride",
+  5: "second lift",
+};
 
 export type FatigueLevel = "fresh" | "moderate" | "fatigued" | "very_fatigued";
 
@@ -84,11 +107,13 @@ export function classifyPhase(weeksToRace: number | undefined, config: Config): 
 }
 
 // Strength sessions/week the phase asks for (before the fatigue cap is applied).
-// The final taper week (< taper_zero_weeks) drops strength entirely.
+// The final taper week (< taper_zero_weeks) drops strength entirely. Outside
+// the taper, a season block covering `date` may set its own count.
 export function phaseWeightSessions(
   phase: Phase | undefined,
   weeksToRace: number | undefined,
   config: Config,
+  date?: string,
 ): number {
   if (phase === "taper") {
     if (weeksToRace !== undefined && weeksToRace < config.periodization.taper_zero_weeks) {
@@ -96,7 +121,7 @@ export function phaseWeightSessions(
     }
     return config.scheduling.weight_sessions_taper;
   }
-  return config.scheduling.weight_sessions;
+  return date === undefined ? config.scheduling.weight_sessions : weightSessionsOn(date, config);
 }
 
 function classifyIntensity(fatigue: FatigueLevel): CyclingIntensity {
@@ -194,6 +219,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   const days = 7;
   const { scheduling, weight_training, weight_training_taper, weight_training_cut, sweet_spot } =
     config;
+  const block = activeBlock(startDate, config.blocks);
   const guardOn = rampGuardTriggered(rampRatePct, config);
 
   // Track zones already assigned to hard rides this week so consecutive hard
@@ -313,19 +339,41 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // two. Inside the fueling block the cut routine keeps the heavy loads but
   // trims sets, since recovery is the scarce resource in a deficit.
   const inCut = config.fueling.enabled && isWithinBlock(startDate, config.fueling);
-  const strengthRoutine =
+  // Outside both, a block may ask for the maintenance routine (in season:
+  // same loads, less volume).
+  const baseRoutine =
     phase === "taper"
       ? (weight_training_taper ?? weight_training)
       : inCut
         ? (weight_training_cut ?? weight_training)
-        : weight_training;
-  // Phase asks for a session count; fatigue can only reduce it, never inflate it.
+        : block?.strength_routine === "maintenance"
+          ? (config.weight_training_maintenance ?? weight_training)
+          : weight_training;
+  // `{reps}` in a routine is the main-lift rep target for this week of the
+  // block (src/workout.ts strengthReps); `step` already repeats the previous
+  // rung on a back-off week.
+  const strengthRoutine = {
+    ...baseRoutine,
+    description: baseRoutine.description.replaceAll(
+      "{reps}",
+      strengthReps(step, block?.progression === true),
+    ),
+  };
+  // Phase asks for a session count; fatigue can only reduce it, never inflate
+  // it, and so can the bike floor: riding under a block's bike_floor_hours
+  // outranks the second lift, so that week gets one.
+  const blockSessions = weightSessionsOn(startDate, config);
   const fatigueSessions = veryFatigued
-    ? scheduling.weight_sessions_very_fatigued
-    : scheduling.weight_sessions;
+    ? Math.min(scheduling.weight_sessions_very_fatigued, blockSessions)
+    : blockSessions;
+  const bikeFloorHours = block?.bike_floor_hours;
+  const floorSessions = secondLiftGate(startDate, config, input.recentRideHours).open
+    ? Infinity
+    : 1;
   const weightSessionsTarget = Math.min(
-    phaseWeightSessions(phase, weeksToRace, config),
+    phaseWeightSessions(phase, weeksToRace, config, startDate),
     fatigueSessions,
+    floorSessions,
   );
   // Strength sessions already on this week's calendar consume the quota;
   // pre-window ones only constrain spacing, not the count.
@@ -581,6 +629,51 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   }
 
   const longIdx = attachLoadTargets(out, config, hasExistingLongRide, longMinutes);
+  const easyRide = (date: string): Partial<PlannedWorkout> => {
+    const lt = config.load_targets;
+    const durationMin = Math.min(lt.easy_minutes, dayCapMinutes(date, config));
+    return {
+      type: "cycling",
+      name: "Easy Ride",
+      description: buildCyclingDescription("easy"),
+      intensity: "easy",
+      durationMin,
+      intensityFactor: lt.easy_if,
+      load: Math.round((durationMin / 60) * lt.easy_if * lt.easy_if * 100),
+    };
+  };
+  const inWindow = (e: IntervalsEvent): boolean => {
+    const idx = dayDiff(startDate, dayKey(e.start_date_local));
+    return idx >= 0 && idx < days;
+  };
+
+  // Bike floor, planned side: a second lift on a day of its own takes that day
+  // from the bike. If the week's planned ride time then falls under the block's
+  // bike_floor_hours, the later such lift becomes an easy ride. Stacked lifts
+  // cost no ride time and are left alone. Abstains when a fixed day's ride time
+  // is unknown (a completed day, or a calendar ride with no planned duration),
+  // since that would read as zero hours and cut a lift the week had room for.
+  if (bikeFloorHours !== undefined) {
+    const fixedEvents = existingEvents.filter(
+      (e) => inWindow(e) && e.category === "WORKOUT" && classifyExistingEvent(e) !== "weights",
+    );
+    const unknown =
+      fixedEvents.some((e) => typeof e.moving_time !== "number") ||
+      (completedDates ?? []).some((d) => dates.includes(dayKey(d)));
+    const isRide = (w: PlannedWorkout): boolean => w.type === "cycling" || w.type === "sweet_spot";
+    const rideMinutes =
+      out.filter(isRide).reduce((s, w) => s + (w.durationMin ?? 0), 0) +
+      fixedEvents.reduce((s, e) => s + (e.moving_time ?? 0) / 60, 0);
+    const plannedLifts = out.filter((w) => w.type === "weights");
+    const ownDayLifts = plannedLifts.filter(
+      (l) => !out.some((w) => w.date === l.date && isRide(w)),
+    );
+    const liftsThisWeek = plannedLifts.length + existingWeightDays.filter((i) => i >= 0).length;
+    const dropped = ownDayLifts[ownDayLifts.length - 1];
+    if (!unknown && dropped && liftsThisWeek >= 2 && rideMinutes < bikeFloorHours * 60) {
+      Object.assign(dropped, easyRide(dropped.date));
+    }
+  }
 
   // Partial window: when earlier runs or hand-added events already fix most of
   // the week, this run can't make up a shortfall later, so the rest day has to
@@ -611,16 +704,7 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     !fixedDays.some(loadUnknown) &&
     windowTss(out, existingEvents, startDate, days) < 7 * trainingLoad.ctl
   ) {
-    const lt = config.load_targets;
-    const durationMin = Math.min(lt.easy_minutes, dayCapMinutes(restDay.date, config));
-    Object.assign(restDay, {
-      type: "cycling",
-      name: "Easy Ride",
-      description: buildCyclingDescription("easy"),
-      durationMin,
-      intensityFactor: lt.easy_if,
-      load: Math.round((durationMin / 60) * lt.easy_if * lt.easy_if * 100),
-    });
+    Object.assign(restDay, easyRide(restDay.date));
   }
 
   // Season floor: a block's ctl_floor lengthens easy rides when the week as
@@ -632,6 +716,24 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
     const shortfall = target - windowTss(out, existingEvents, startDate, days);
     if (shortfall > 0) extendEasyRides(out, longIdx, shortfall, config);
   }
+
+  // Cutting order (PRIORITY_LABELS). A lift already on this week's calendar is
+  // the first lift, so every one planned here is then the optional one.
+  let liftsSeen = existingWeightDays.filter((i) => i >= 0).length;
+  out.forEach((w, i) => {
+    if (w.type === "rest" || w.type === "travel") return;
+    if (w.type === "weights") {
+      w.priority = liftsSeen++ === 0 ? 3 : 5;
+      if (w.priority === 5) {
+        w.name = `${w.name} (optional)`;
+        w.description = `${OPTIONAL_LIFT_NOTE}\n\n${w.description}`;
+      }
+    } else if (w.type === "sweet_spot" || w.intensity === "hard") {
+      w.priority = 1;
+    } else {
+      w.priority = i === longIdx ? 2 : 4;
+    }
+  });
   return out;
 }
 

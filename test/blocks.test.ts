@@ -10,6 +10,8 @@ import {
   longRideMinutes,
   progressionStep,
   projectCtl,
+  secondLiftGate,
+  weightSessionsOn,
   windowTss,
 } from "../src/blocks.js";
 import { loadConfig } from "../src/config.js";
@@ -207,6 +209,24 @@ blocks:
       /hard_zone_focus/,
     ],
     [
+      "a fractional session count",
+      `
+  - { name: "A", start_date: "2026-01-01", end_date: "2026-01-31", weight_sessions: 1.5 }`,
+      /weight_sessions/,
+    ],
+    [
+      "an unknown strength routine",
+      `
+  - { name: "A", start_date: "2026-01-01", end_date: "2026-01-31", strength_routine: heavy }`,
+      /strength_routine/,
+    ],
+    [
+      "a non-positive bike floor",
+      `
+  - { name: "A", start_date: "2026-01-01", end_date: "2026-01-31", bike_floor_hours: 0 }`,
+      /bike_floor_hours/,
+    ],
+    [
       "a non-positive floor",
       `
   - { name: "A", start_date: "2026-01-01", end_date: "2026-01-31", ctl_floor: 0 }`,
@@ -297,5 +317,52 @@ describe("progressionStep / longRideMinutes", () => {
     expect(longRideMinutes(1, cfg([]))).toBe(195);
     expect(longRideMinutes(4, cfg([]))).toBe(210);
     expect(longRideMinutes(4, cfg([], 180))).toBe(180); // default ceiling: no growth
+  });
+});
+
+describe("block strength settings", () => {
+  let tmpDir: string;
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "wp-strength-"));
+  });
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+  const load = async (): Promise<Config> => {
+    const file = path.join(tmpDir, "config.yaml");
+    await fs.writeFile(
+      file,
+      `
+weight_training: { name: "S", duration_minutes: 45, description: "x" }
+weight_training_maintenance: { name: "M", duration_minutes: 35, description: "y" }
+sweet_spot: { name: "SS", duration_minutes: 60, description: "x" }
+blocks:
+  - { name: "Winter", start_date: "2026-12-07", end_date: "2027-02-28", weight_sessions: 2, bike_floor_hours: 6 }
+  - { name: "Season", start_date: "2027-05-03", end_date: "2027-09-26", weight_sessions: 1, strength_routine: maintenance }
+`,
+      "utf8",
+    );
+    return loadConfig(file);
+  };
+
+  it("loads the block overrides and the maintenance routine", async () => {
+    const cfg = await load();
+    expect(cfg.weight_training_maintenance?.name).toBe("M");
+    expect(cfg.blocks?.[0]).toMatchObject({ weight_sessions: 2, bike_floor_hours: 6 });
+    expect(cfg.blocks?.[1]).toMatchObject({ weight_sessions: 1, strength_routine: "maintenance" });
+  });
+
+  it("weightSessionsOn follows the block and falls back between blocks", async () => {
+    const cfg = await load();
+    expect(weightSessionsOn("2027-06-07", cfg)).toBe(1);
+    expect(weightSessionsOn("2027-03-15", cfg)).toBe(cfg.scheduling.weight_sessions);
+  });
+
+  it("secondLiftGate closes only under a floor it can judge", async () => {
+    const cfg = await load();
+    expect(secondLiftGate("2026-12-07", cfg, 4.1)).toEqual({ open: false, floorHours: 6 });
+    expect(secondLiftGate("2026-12-07", cfg, 6)).toEqual({ open: true, floorHours: 6 });
+    expect(secondLiftGate("2026-12-07", cfg, undefined)).toEqual({ open: true, floorHours: 6 });
+    expect(secondLiftGate("2027-06-07", cfg, 0)).toEqual({ open: true });
   });
 });
