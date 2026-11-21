@@ -2119,6 +2119,45 @@ describe("strength placement around the long ride", () => {
     expectLiftsClearOfLongRide(plan);
   });
 
+  it("holds the spacing against the ride's actual day for every tier and taken-day pair", () => {
+    const week = ["20", "21", "22", "23", "24", "25", "26"].map((d) => `2026-04-${d}`);
+    for (const v of [10, 0, -15, -25]) {
+      for (let a = -1; a < 7; a++) {
+        for (let b = a; b < 7; b++) {
+          const taken = [...new Set([a, b].filter((i) => i >= 0).map((i) => week[i]))];
+          const plan = schedule(
+            makeInput({ config: cfg, trainingLoad: tsb(v), completedDates: taken }),
+          );
+          const [long] = dayOf(plan, isLong);
+          if (!long) continue;
+          const lifts = dayOf(plan, isLift);
+          const where = `tsb ${v}, taken ${taken.join(",") || "none"}`;
+          expect(lifts, where).not.toContain(long);
+          // The day before is allowed only as the week's single, last-resort lift.
+          if (lifts.includes(prevDay(long))) expect(lifts.length, where).toBe(1);
+        }
+      }
+    }
+  });
+
+  it("never places a lift on a day that already holds a calendar ride", () => {
+    const plan = schedule(
+      makeInput({
+        config: cfg,
+        trainingLoad: tsb(0),
+        existingEvents: [
+          {
+            start_date_local: "2026-04-20T00:00:00",
+            name: "Easy Ride",
+            category: "WORKOUT",
+            type: "Ride",
+          },
+        ],
+      }),
+    );
+    expect(plan.some((w) => w.date === "2026-04-20")).toBe(false);
+  });
+
   it("names a stacked lift as the evening session and leaves a standalone one plain", () => {
     const plan = schedule(makeInput({ config: cfg, trainingLoad: tsb(0) }));
     const lifts = plan.filter(isLift);

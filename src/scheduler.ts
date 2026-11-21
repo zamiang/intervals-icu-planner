@@ -422,16 +422,16 @@ export function schedule(input: SchedulerInput): PlannedWorkout[] {
   // weekday_max_minutes set, a weekend day). It is chosen here, before any
   // quality or strength session is placed, and held: the ride is promoted last
   // (attachLoadTargets), so without the hold a session placed earlier could
-  // take its day, and a lift could land the day before it. A very fatigued
-  // week doesn't hold the day — that week is shedding load anyway — but still
-  // keeps lifts away from where the ride will most likely fall.
+  // take its day, and a lift could land the day before it. The pick comes
+  // after Phase 0, so a very fatigued week's day-0 rest is never the held day,
+  // and the day promoted at the end is always this one.
   const longMinutes = longRideMinutes(step, config);
   const fitsLongRide = (i: number): boolean => dayCapMinutes(dates[i], config) >= longMinutes;
   const plannedLongIdx = hasExistingLongRide
     ? undefined
     : [...available].reverse().find((i) => isEmpty(i) && fitsLongRide(i));
   const longIdxForSpacing = existingLongIdx ?? plannedLongIdx;
-  const reservedForLongRide = (i: number): boolean => !veryFatigued && i === plannedLongIdx;
+  const reservedForLongRide = (i: number): boolean => i === plannedLongIdx;
   const isLongRideDay = (i: number): boolean => i === longIdxForSpacing;
   const isDayBeforeLongRide = (i: number): boolean =>
     longIdxForSpacing !== undefined && i === longIdxForSpacing - 1;
